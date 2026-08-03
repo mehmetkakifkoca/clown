@@ -13,7 +13,19 @@ interface ConnectedAccount {
 export default function AccountSettingsPage() {
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
 
-  useEffect(() => { loadAccounts(); }, []);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadAccounts();
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const details = params.get("details");
+      const err = params.get("error");
+      if (err || details) {
+        setErrorDetails(details ? decodeURIComponent(details) : err);
+      }
+    }
+  }, []);
 
   const loadAccounts = async () => {
     try {
@@ -40,6 +52,16 @@ export default function AccountSettingsPage() {
           <h1 className="text-xl font-bold font-headline-lg text-on-surface">Bağlı Hesaplar</h1>
         </div>
       </header>
+
+      {errorDetails && (
+        <div className="mb-6 p-4 bg-error-container/30 border border-error/30 rounded-2xl flex items-start space-x-3 text-on-error-container text-xs font-medium">
+          <span className="material-symbols-outlined text-[20px] text-error flex-shrink-0">error</span>
+          <div>
+            <p className="font-bold">Bağlantı Hatası Detayı:</p>
+            <p className="font-mono mt-1 text-[11px] opacity-90 break-all">{errorDetails}</p>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-6">
         <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
