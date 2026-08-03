@@ -45,6 +45,20 @@ export default function AccountSettingsPage() {
     loadAccounts();
   };
 
+  const sendTestNotification = async () => {
+    try {
+      const res = await fetch("/api/cron/check-emails");
+      const data = await res.json();
+      if (data.success) {
+        alert("Test bildirimi cihaza gönderildi!");
+      } else {
+        alert(`Test uyarısı: ${data.message || JSON.stringify(data)}`);
+      }
+    } catch (e: any) {
+      alert(`Hata: ${e.message}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8">
       <header className="flex items-center space-x-3 mb-8">
@@ -69,9 +83,9 @@ export default function AccountSettingsPage() {
 
       <div className="space-y-6">
         {/* Push Bildirim Kartı */}
-        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs flex items-center justify-between">
+        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+            <div className="w-11 h-11 rounded-2xl bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
               <span className="material-symbols-outlined text-2xl">notifications_active</span>
             </div>
             <div>
@@ -81,28 +95,41 @@ export default function AccountSettingsPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={async () => {
-              setNotifLoading(true);
-              try {
-                const { subscribeToPushNotifications } = await import("@/lib/push");
-                await subscribeToPushNotifications();
-                setNotificationSubscribed(true);
-                alert("Bildirimler başarıyla aktif edildi!");
-              } catch (err: any) {
-                alert(`Bildirim hatası: ${err.message}`);
-              }
-              setNotifLoading(false);
-            }}
-            disabled={notificationSubscribed || notifLoading}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all ${
-              notificationSubscribed
-                ? "bg-emerald-100 text-emerald-800 cursor-default"
-                : "bg-primary text-on-primary hover:bg-primary-container"
-            }`}
-          >
-            {notificationSubscribed ? "✓ Aktif" : notifLoading ? "İzin İsteniyor..." : "Bildirimleri Aç"}
-          </button>
+
+          <div className="flex items-center space-x-2 w-full sm:w-auto">
+            <button
+              onClick={async () => {
+                setNotifLoading(true);
+                try {
+                  const { subscribeToPushNotifications } = await import("@/lib/push");
+                  await subscribeToPushNotifications();
+                  setNotificationSubscribed(true);
+                  alert("Bildirimler başarıyla aktif edildi!");
+                } catch (err: any) {
+                  alert(`Bildirim hatası: ${err.message}`);
+                }
+                setNotifLoading(false);
+              }}
+              disabled={notificationSubscribed || notifLoading}
+              className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all ${
+                notificationSubscribed
+                  ? "bg-emerald-100 text-emerald-800 cursor-default"
+                  : "bg-primary text-on-primary hover:bg-primary-container"
+              }`}
+            >
+              {notificationSubscribed ? "✓ Aktif" : notifLoading ? "İzin İsteniyor..." : "Bildirimleri Aç"}
+            </button>
+
+            {notificationSubscribed && (
+              <button
+                onClick={sendTestNotification}
+                className="px-3 py-2.5 bg-surface-container hover:bg-surface-container-high rounded-xl text-xs font-semibold text-on-surface transition-colors"
+                title="Test Bildirimi Gönder"
+              >
+                Test Et
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
