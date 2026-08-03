@@ -18,7 +18,7 @@ export function getMicrosoftAuthUrl(): string {
     response_mode: "query",
     scope: SCOPES,
   });
-  return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
+  return `https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
 // 2. OAuth Code -> Access Token & Refresh Token Takası
@@ -31,7 +31,7 @@ export async function getTokensFromCode(code: string) {
     grant_type: "authorization_code",
   });
 
-  const res = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+  const res = await fetch("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
@@ -55,7 +55,7 @@ export async function refreshAccessToken(refreshToken: string) {
     scope: SCOPES,
   });
 
-  const res = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+  const res = await fetch("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
