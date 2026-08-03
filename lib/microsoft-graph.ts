@@ -5,9 +5,7 @@
 
 const CLIENT_ID = process.env.OUTLOOK_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.OUTLOOK_CLIENT_SECRET || "";
-const REDIRECT_URI = process.env.NEXT_PUBLIC_APP_URL
-  ? `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback/microsoft`
-  : "https://clown-seven.vercel.app/api/auth/callback/microsoft";
+const REDIRECT_URI = "https://clown-seven.vercel.app/api/auth/callback/microsoft";
 
 const SCOPES = ["openid", "profile", "offline_access", "User.Read", "Mail.Read", "Mail.Send"].join(" ");
 
