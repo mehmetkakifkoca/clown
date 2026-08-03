@@ -37,8 +37,9 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.redirect(new URL("/inbox?success=connected", request.url));
-  } catch (err: unknown) {
+  } catch (err: any) {
     console.error("Microsoft OAuth Callback Hatası:", err);
-    return NextResponse.redirect(new URL("/settings/accounts?error=token_exchange_failed", request.url));
+    const errMsg = encodeURIComponent(err?.message || "unknown_error");
+    return NextResponse.redirect(new URL(`/settings/accounts?error=token_exchange_failed&details=${errMsg}`, request.url));
   }
 }
