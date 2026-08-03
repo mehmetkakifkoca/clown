@@ -73,6 +73,7 @@ export async function GET(request: Request) {
           const msgs = await fetchGmailMessages(accessToken, 20, gmailFolder);
           const formatted = msgs.map((msg: any) => ({
             ...msg,
+            provider: "gmail",
             rawDate: msg.date ? new Date(msg.date).getTime() : Date.now(),
             accountEmail: acc.email,
           }));

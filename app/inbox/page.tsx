@@ -196,14 +196,23 @@ function InboxContent() {
                         <span className="material-symbols-outlined text-[13px] mr-1">attach_file</span>Ek
                       </span>
                     )}
-                    <span className={`text-[10px] uppercase font-label-sm tracking-wider font-semibold px-2 py-0.5 rounded ${
-                      msg.provider === "gmail" ? "bg-red-50 text-red-600 border border-red-200" : "bg-blue-50 text-blue-600 border border-blue-200"
-                    }`}>
-                      {msg.provider === "gmail" ? "GMAIL" : "HOTMAIL"}
-                    </span>
-                    {msg.accountEmail && (
-                      <span className="text-[10px] text-outline font-mono opacity-75 truncate max-w-[140px]">{msg.accountEmail}</span>
-                    )}
+                    {(() => {
+                      const isGmailAccount = msg.accountEmail ? msg.accountEmail.toLowerCase().includes("gmail") : msg.provider === "gmail";
+                      return (
+                        <>
+                          <span className={`text-[10px] uppercase font-label-sm tracking-wider font-semibold px-2 py-0.5 rounded ${
+                            isGmailAccount ? "bg-red-50 text-red-600 border border-red-200" : "bg-blue-50 text-blue-600 border border-blue-200"
+                          }`}>
+                            {isGmailAccount ? "GMAIL" : "HOTMAIL"}
+                          </span>
+                          {msg.accountEmail && (
+                            <span className="text-[10px] text-outline font-mono opacity-75 truncate max-w-[160px]">
+                              {msg.accountEmail}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
