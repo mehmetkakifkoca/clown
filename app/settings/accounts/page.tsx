@@ -59,6 +59,9 @@ export default function AccountSettingsPage() {
     }
   };
 
+  const hotmailAcc = accounts.find((a) => a.provider === "hotmail");
+  const googleAcc = accounts.find((a) => a.provider === "gmail");
+
   return (
     <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8">
       <header className="flex items-center space-x-3 mb-8">
@@ -132,39 +135,65 @@ export default function AccountSettingsPage() {
           </div>
         </div>
 
-        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
-          <h2 className="text-base font-bold text-on-surface mb-2">Microsoft Hotmail / Outlook Entegrasyonu</h2>
-          <p className="text-xs text-secondary leading-relaxed mb-6">
-            E-postalarınızı güvenle okumak ve yanıtlamak için resmi Microsoft OAuth 2.0 servisini kullanabilirsiniz.
-          </p>
+        {/* Microsoft Kartı */}
+        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs flex items-center justify-between">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-blue-50 flex items-center justify-center text-[#0078d4] flex-shrink-0 border border-blue-200">
+              <span className="material-symbols-outlined text-2xl">mail</span>
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-on-surface">Microsoft Hotmail / Outlook</h2>
+              <p className="text-xs text-secondary mt-0.5">
+                {hotmailAcc ? hotmailAcc.email : "Microsoft OAuth 2.0 ile e-postalarınızı bağlayın"}
+              </p>
+            </div>
+          </div>
 
-          {accounts.length === 0 ? (
+          {hotmailAcc ? (
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
+              <button onClick={() => handleDisconnect(hotmailAcc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
+                Kaldır
+              </button>
+            </div>
+          ) : (
             <a
               href="/api/auth/microsoft"
-              className="inline-flex items-center space-x-3 px-6 py-3.5 bg-[#0078d4] text-white rounded-2xl font-bold text-sm shadow-md hover:bg-[#005a9e] transition-all duration-200"
+              className="px-4 py-2.5 bg-[#0078d4] text-white rounded-xl font-bold text-xs shadow-sm hover:bg-[#005a9e] transition-all"
             >
-              <span className="material-symbols-outlined text-xl">login</span>
-              <span>Microsoft ile Giriş Yap & Bağla</span>
+              Hotmail Bağla
             </a>
-          ) : (
-            <div className="space-y-3">
-              {accounts.map((acc) => (
-                <div key={acc.id} className="bg-surface-container-low rounded-2xl p-4 border border-outline-variant/30 flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-[#0078d4]">
-                      <span className="material-symbols-outlined text-xl">mail</span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-on-surface">{acc.label}</p>
-                      <p className="text-xs text-secondary">{acc.email}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => handleDisconnect(acc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
-                    Bağlantıyı Kes
-                  </button>
-                </div>
-              ))}
+          )}
+        </div>
+
+        {/* Google Kartı */}
+        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs flex items-center justify-between">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-red-50 flex items-center justify-center text-red-600 flex-shrink-0 border border-red-200">
+              <span className="material-symbols-outlined text-2xl">mark_email_unread</span>
             </div>
+            <div>
+              <h2 className="text-base font-bold text-on-surface">Google / Gmail & Calendar</h2>
+              <p className="text-xs text-secondary mt-0.5">
+                {googleAcc ? googleAcc.email : "Gmail ve Google Calendar etkinliklerinizi canlı senkronize edin"}
+              </p>
+            </div>
+          </div>
+
+          {googleAcc ? (
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
+              <button onClick={() => handleDisconnect(googleAcc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
+                Kaldır
+              </button>
+            </div>
+          ) : (
+            <a
+              href="/api/auth/google"
+              className="px-4 py-2.5 bg-red-600 text-white rounded-xl font-bold text-xs shadow-sm hover:bg-red-700 transition-all"
+            >
+              Google Bağla
+            </a>
           )}
         </div>
       </div>
