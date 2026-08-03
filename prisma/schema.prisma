@@ -1,0 +1,69 @@
+// Prisma schema for Clown App
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model MailAccount {
+  id          String   @id @default(uuid())
+  provider    String   // GMAIL, OUTLOOK, IMAP
+  email       String   @unique
+  status      String   @default("connected") // connected, error, sync_pending
+  credentials String?  // Encrypted OAuth/IMAP credentials token
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Page {
+  id        String   @id @default(uuid())
+  title     String   @default("Untitled Page")
+  icon      String   @default("description")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  blocks    Block[]
+}
+
+model Block {
+  id        String   @id @default(uuid())
+  pageId    String
+  type      String   // heading, paragraph, checklist
+  content   String   @default("")
+  checked   Boolean  @default(false)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+}
+
+model TrackedInstagramAccount {
+  id          String   @id @default(uuid())
+  handle      String   @unique
+  name        String
+  category    String
+  followers   String
+  growth      String
+  engagement  String
+  avatarUrl   String
+  postsJson   String   // JSON array of image URLs
+  addedAt     DateTime @default(now())
+}
+
+model CachedEvent {
+  id        String   @id @default(uuid())
+  title     String
+  date      String   // YYYY-MM-DD
+  startTime String   // e.g. "09:00 AM"
+  endTime   String   // e.g. "10:30 AM"
+  location  String?
+  category  String   @default("Work")
+  isUrgent  Boolean  @default(false)
+  provider  String   @default("Local")
+  createdAt DateTime @default(now())
+}

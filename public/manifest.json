@@ -1,0 +1,24 @@
+{
+  "name": "Clown — Personal Productivity",
+  "short_name": "Clown",
+  "description": "Unified mobile hub for Email, Calendar, Notion-style Notes, and Social Tracking",
+  "start_url": "/inbox",
+  "display": "standalone",
+  "background_color": "#f9f9f6",
+  "theme_color": "#b61722",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo-apple.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
