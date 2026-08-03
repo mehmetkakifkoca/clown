@@ -133,14 +133,8 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex flex-col w-72 h-screen fixed top-0 left-0 z-30 bg-surface-container-lowest border-r border-outline-variant/30 px-4 py-6 shadow-sm overflow-hidden">
       {/* Brand Header */}
-      <div className="flex items-center space-x-3 px-3 mb-8 flex-shrink-0">
-        <div className="w-10 h-10 rounded-2xl bg-white border border-outline-variant/30 shadow-sm flex items-center justify-center p-1 overflow-hidden flex-shrink-0">
-          <img src="/logo-mascot.png" alt="Clown Logo" className="w-full h-full object-contain" />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-xl font-bold tracking-tight text-on-surface font-headline-lg leading-none">CLOWN</span>
-          <span className="text-[10px] font-bold text-primary tracking-widest font-label-caps uppercase mt-0.5">Mehmet Akif Koca</span>
-        </div>
+      <div className="flex items-center space-x-3 px-2 mb-6 flex-shrink-0">
+        <img src="/logo-full.svg" alt="Clown" className="h-10 w-auto object-contain" />
       </div>
 
       <Suspense fallback={<div className="flex-1" />}>
