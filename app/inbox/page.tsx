@@ -2,43 +2,103 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { emailProvider, EmailMessage } from "@/lib/integrations/email";
+
+interface RealEmail {
+  id: string;
+  uid: number;
+  subject: string;
+  from: string;
+  fromEmail: string;
+  date: string;
+  snippet: string;
+  isRead: boolean;
+  hasAttachments: boolean;
+}
+
+interface ConnectedAccount {
+  id: string;
+  email: string;
+  provider: string;
+  label: string;
+}
 
 export default function InboxPage() {
-  const [filter, setFilter] = useState<string>("all");
-  const [messages, setMessages] = useState<EmailMessage[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [showCompose, setShowCompose] = useState<boolean>(false);
-  const [composeData, setComposeData] = useState({ to: "", subject: "", body: "" });
+  const [filter, setFilter] = useState("all");
+  const [messages, setMessages] = useState<RealEmail[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [connectedAccount, setConnectedAccount] = useState<ConnectedAccount | null>(null);
+  const [showCompose, setShowCompose] = useState(false);
+  const [compose, setCompose] = useState({ to: "", subject: "", body: "" });
+  const [sending, setSending] = useState(false);
 
-  useEffect(() => {
-    loadMessages();
-  }, [filter]);
+  useEffect(() => { checkAccount(); }, []);
+  useEffect(() => { if (connectedAccount) loadMessages(); }, [filter, connectedAccount]);
 
-  const loadMessages = async () => {
-    setLoading(true);
-    const data = await emailProvider.fetchMessages(filter);
-    setMessages(data);
-    setLoading(false);
-  };
-
-  const getProviderIcon = (provider: string) => {
-    switch (provider) {
-      case "gmail":
-        return <span className="material-symbols-outlined text-[14px] text-red-600">mail</span>;
-      case "outlook":
-        return <span className="material-symbols-outlined text-[14px] text-blue-600">domain</span>;
-      default:
-        return <span className="material-symbols-outlined text-[14px] text-purple-600">mark_email_unread</span>;
+  const checkAccount = async () => {
+    try {
+      const res = await fetch("/api/mail/accounts");
+      const accounts = await res.json();
+      if (Array.isArray(accounts) && accounts.length > 0) {
+        setConnectedAccount(accounts[0]);
+      } else {
+        setLoading(false);
+      }
+    } catch {
+      setLoading(false);
     }
   };
 
-  const handleSendCompose = (e: React.FormEvent) => {
-    e.preventDefault();
-    alert(`Mesaj ${composeData.to} adresine gönderildi!`);
-    setShowCompose(false);
-    setComposeData({ to: "", subject: "", body: "" });
+  const loadMessages = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/mail/inbox?filter=${filter}`);
+      const data = await res.json();
+      if (data.error) { setError(data.error); setMessages([]); }
+      else setMessages(data);
+    } catch {
+      setError("E-postalar yüklenemedi");
+    }
+    setLoading(false);
   };
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSending(true);
+    try {
+      const res = await fetch("/api/mail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: compose.to, subject: compose.subject, text: compose.body }),
+      });
+      const data = await res.json();
+      if (data.error) alert(`Hata: ${data.error}`);
+      else { alert("E-posta gönderildi!"); setShowCompose(false); setCompose({ to: "", subject: "", body: "" }); }
+    } catch { alert("Gönderim başarısız"); }
+    setSending(false);
+  };
+
+  // ── Hesap bağlı değil ─────────────────────────────────
+  if (!connectedAccount && !loading) {
+    return (
+      <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8 flex flex-col items-center justify-center">
+        <div className="max-w-md w-full text-center bg-surface-container-lowest rounded-3xl p-10 border border-outline-variant/30 shadow-lg">
+          <div className="w-16 h-16 rounded-full bg-primary-fixed/30 flex items-center justify-center mx-auto mb-4">
+            <span className="material-symbols-outlined text-3xl text-primary">mail_lock</span>
+          </div>
+          <h2 className="text-xl font-bold font-headline-lg text-on-surface mb-2">Henüz Hesap Bağlanmadı</h2>
+          <p className="text-sm text-secondary mb-6 leading-relaxed">
+            Hotmail / Outlook e-postalarını görmek için hesabınızı bağlayın. Azure gerekmez — sadece uygulama şifresi yeterli.
+          </p>
+          <Link href="/settings/accounts" className="inline-flex items-center space-x-2 px-6 py-3 bg-primary text-on-primary rounded-2xl font-semibold text-sm shadow-md hover:bg-primary-container transition-colors">
+            <span className="material-symbols-outlined text-[20px]">add_link</span>
+            <span>Hotmail Bağla</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8">
@@ -52,7 +112,7 @@ export default function InboxPage() {
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 bg-primary rounded-full animate-pulse" />
               <span className="text-[11px] font-semibold text-primary uppercase tracking-wider font-label-caps">
-                Birleşik Posta Merkezi
+                {connectedAccount ? connectedAccount.email : "Birleşik Posta Merkezi"}
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold font-headline-lg text-on-surface tracking-tight mt-0.5">
@@ -69,115 +129,84 @@ export default function InboxPage() {
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span>E-posta Yaz</span>
           </button>
-
-          <Link
-            href="/settings/accounts"
-            className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-variant transition-colors border border-outline-variant/30"
-            title="Hesap Ayarları"
-          >
+          <button onClick={loadMessages} className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center hover:bg-surface-container-high transition-colors border border-outline-variant/30" title="Yenile">
+            <span className="material-symbols-outlined text-[20px]">refresh</span>
+          </button>
+          <Link href="/settings/accounts" className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center hover:bg-surface-container-high transition-colors border border-outline-variant/30" title="Hesap Ayarları">
             <span className="material-symbols-outlined text-[20px]">manage_accounts</span>
           </Link>
         </div>
       </header>
 
-      {/* Filtre Çipleri */}
+      {/* Filtreler */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-3 mb-6 scrollbar-none">
         {[
           { id: "all", label: "Tüm Mesajlar", icon: "inbox" },
           { id: "unread", label: "Okunmamış", icon: "mark_email_unread" },
           { id: "flagged", label: "İşaretli", icon: "star" },
           { id: "attachments", label: "Ekler", icon: "attach_file" },
-        ].map((chip) => {
-          const isActive = filter === chip.id;
-          return (
-            <button
-              key={chip.id}
-              onClick={() => setFilter(chip.id)}
-              className={`flex items-center space-x-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
-                isActive
-                  ? "bg-primary text-on-primary shadow-sm"
-                  : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">{chip.icon}</span>
-              <span>{chip.label}</span>
-            </button>
-          );
-        })}
+        ].map((chip) => (
+          <button key={chip.id} onClick={() => setFilter(chip.id)}
+            className={`flex items-center space-x-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
+              filter === chip.id ? "bg-primary text-on-primary shadow-sm" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">{chip.icon}</span>
+            <span>{chip.label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* E-posta Listesi */}
+      {/* İçerik */}
       {loading ? (
-        <div className="space-y-3 mt-4">
-          {[1, 2, 3].map((n) => (
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((n) => (
             <div key={n} className="h-24 bg-surface-container-low animate-pulse rounded-2xl border border-outline-variant/20" />
           ))}
+          <p className="text-center text-xs text-secondary pt-2 animate-pulse">IMAP sunucusuna bağlanılıyor...</p>
+        </div>
+      ) : error ? (
+        <div className="text-center py-16 bg-error-container/20 rounded-3xl border border-error/30 p-6">
+          <span className="material-symbols-outlined text-4xl text-error mb-2">error</span>
+          <p className="text-sm font-semibold text-on-error-container mb-1">Bağlantı Hatası</p>
+          <p className="text-xs text-secondary">{error}</p>
+          <Link href="/settings/accounts" className="inline-flex items-center mt-4 px-4 py-2 bg-primary text-on-primary text-xs font-semibold rounded-xl">
+            Ayarları Kontrol Et
+          </Link>
         </div>
       ) : messages.length === 0 ? (
         <div className="text-center py-16 bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6">
           <span className="material-symbols-outlined text-4xl text-outline mb-2">drafts</span>
-          <p className="text-sm text-secondary font-medium">Bu görünümde mesaj bulunamadı</p>
+          <p className="text-sm text-secondary font-medium">Bu görünümde mesaj yok</p>
         </div>
       ) : (
         <div className="space-y-3">
           {messages.map((msg) => (
-            <Link
-              key={msg.id}
-              href={`/inbox/${msg.id}`}
-              className={`block bg-surface-container-lowest rounded-2xl p-4 md:p-5 border border-outline-variant/30 shadow-[0_4px_20px_-2px_rgba(182,23,34,0.06)] hover:border-primary/40 transition-all duration-200 relative overflow-hidden group ${
-                msg.isUnread ? "bg-surface-container-lowest" : "opacity-90"
-              }`}
+            <Link key={msg.id} href={`/inbox/${msg.id}`}
+              className={`block bg-surface-container-lowest rounded-2xl p-4 md:p-5 border border-outline-variant/30 shadow-[0_4px_20px_-2px_rgba(182,23,34,0.06)] hover:border-primary/40 transition-all duration-200 relative overflow-hidden group ${!msg.isRead ? "" : "opacity-90"}`}
             >
-              {msg.isUnread && (
-                <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-primary" />
-              )}
+              {!msg.isRead && <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-primary" />}
 
               <div className="flex items-start space-x-4">
-                <div className="relative flex-shrink-0">
-                  <img
-                    src={msg.avatarUrl}
-                    alt={msg.senderName}
-                    className="w-12 h-12 rounded-full object-cover border border-outline-variant/30 shadow-xs"
-                  />
-                  <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-xs border border-outline-variant/40">
-                    {getProviderIcon(msg.provider)}
-                  </div>
+                {/* Avatar harf */}
+                <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
+                  <span className="text-lg font-bold text-primary">{msg.from.charAt(0).toUpperCase()}</span>
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
-                    <h3 className={`text-sm md:text-base font-bold truncate ${msg.isUnread ? "text-on-surface" : "text-secondary"}`}>
-                      {msg.senderName}
-                    </h3>
-                    <span className="text-[11px] md:text-xs text-outline font-label-sm font-medium">
-                      {msg.timestamp}
-                    </span>
+                    <h3 className={`text-sm md:text-base font-bold truncate ${!msg.isRead ? "text-on-surface" : "text-secondary"}`}>{msg.from}</h3>
+                    <span className="text-[11px] text-outline font-label-sm ml-2 flex-shrink-0">{msg.date}</span>
                   </div>
-
-                  <h4 className={`text-xs md:text-sm truncate mb-1 ${msg.isUnread ? "font-semibold text-on-surface" : "font-normal text-on-surface-variant"}`}>
-                    {msg.subject}
-                  </h4>
-
-                  <p className="text-xs text-secondary line-clamp-2 md:line-clamp-1 leading-relaxed">
-                    {msg.snippet}
-                  </p>
-
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-surface-container-high/50">
-                    <div className="flex items-center space-x-2">
-                      {msg.hasAttachments && (
-                        <span className="inline-flex items-center text-[10px] md:text-xs font-medium text-tertiary bg-tertiary-fixed/40 px-2.5 py-0.5 rounded-md">
-                          <span className="material-symbols-outlined text-[14px] mr-1">attach_file</span>
-                          Ek Dosya
-                        </span>
-                      )}
-                      <span className="text-[10px] uppercase font-label-sm text-outline tracking-wider">
-                        {msg.provider}
+                  <h4 className={`text-xs md:text-sm truncate mb-1 ${!msg.isRead ? "font-semibold text-on-surface" : "text-on-surface-variant"}`}>{msg.subject}</h4>
+                  <p className="text-xs text-secondary line-clamp-1 leading-relaxed">{msg.snippet}</p>
+                  <div className="flex items-center space-x-2 mt-2">
+                    {msg.hasAttachments && (
+                      <span className="inline-flex items-center text-[10px] font-medium text-tertiary bg-tertiary-fixed/40 px-2 py-0.5 rounded-md">
+                        <span className="material-symbols-outlined text-[13px] mr-1">attach_file</span>Ek
                       </span>
-                    </div>
-
-                    {msg.isFlagged && (
-                      <span className="material-symbols-outlined text-[18px] text-amber-500 fill-1">star</span>
                     )}
+                    <span className="text-[10px] uppercase font-label-sm text-outline tracking-wider">HOTMAIL</span>
                   </div>
                 </div>
               </div>
@@ -187,10 +216,8 @@ export default function InboxPage() {
       )}
 
       {/* Mobil FAB */}
-      <button
-        onClick={() => setShowCompose(true)}
-        className="md:hidden fixed bottom-20 right-5 z-40 w-14 h-14 bg-primary text-on-primary rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200"
-        title="E-posta Yaz"
+      <button onClick={() => setShowCompose(true)}
+        className="md:hidden fixed bottom-20 right-5 z-40 w-14 h-14 bg-primary text-on-primary rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
       >
         <span className="material-symbols-outlined text-2xl">edit</span>
       </button>
@@ -200,66 +227,40 @@ export default function InboxPage() {
         <div className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-surface-container-lowest rounded-3xl p-6 shadow-2xl border border-outline-variant/30 animate-in slide-in-from-bottom duration-200">
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-surface-container-high">
-              <h2 className="text-lg font-bold font-headline-lg text-on-surface">Yeni Mesaj</h2>
-              <button
-                onClick={() => setShowCompose(false)}
-                className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-secondary hover:text-on-surface"
-              >
+              <h2 className="text-lg font-bold font-headline-lg">Yeni Mesaj</h2>
+              <button onClick={() => setShowCompose(false)} className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-secondary">
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
-
-            <form onSubmit={handleSendCompose} className="space-y-4">
+            <form onSubmit={handleSend} className="space-y-4">
               <div>
                 <label className="text-xs font-medium text-secondary block mb-1">Alıcı:</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="alici@domain.com"
-                  value={composeData.to}
-                  onChange={(e) => setComposeData({ ...composeData, to: e.target.value })}
-                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary text-on-surface"
+                <input type="email" required placeholder="alici@example.com" value={compose.to}
+                  onChange={(e) => setCompose({ ...compose, to: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary"
                 />
               </div>
-
               <div>
                 <label className="text-xs font-medium text-secondary block mb-1">Konu:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="E-posta konusu"
-                  value={composeData.subject}
-                  onChange={(e) => setComposeData({ ...composeData, subject: e.target.value })}
-                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary text-on-surface"
+                <input type="text" required placeholder="E-posta konusu" value={compose.subject}
+                  onChange={(e) => setCompose({ ...compose, subject: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary"
                 />
               </div>
-
               <div>
                 <label className="text-xs font-medium text-secondary block mb-1">İçerik:</label>
-                <textarea
-                  rows={5}
-                  required
-                  placeholder="E-posta içeriğinizi yazın..."
-                  value={composeData.body}
-                  onChange={(e) => setComposeData({ ...composeData, body: e.target.value })}
-                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary text-on-surface resize-none"
+                <textarea rows={5} required placeholder="Mesajınızı yazın..." value={compose.body}
+                  onChange={(e) => setCompose({ ...compose, body: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary resize-none"
                 />
               </div>
-
               <div className="flex items-center justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCompose(false)}
-                  className="px-4 py-2 text-xs font-medium text-secondary hover:bg-surface-container rounded-xl transition-colors"
+                <button type="button" onClick={() => setShowCompose(false)} className="px-4 py-2 text-xs font-medium text-secondary hover:bg-surface-container rounded-xl transition-colors">İptal</button>
+                <button type="submit" disabled={sending}
+                  className="px-6 py-2.5 text-xs font-semibold bg-primary text-on-primary rounded-xl shadow-md hover:bg-primary-container transition-colors flex items-center space-x-2 disabled:opacity-60"
                 >
-                  İptal
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 text-xs font-semibold bg-primary text-on-primary rounded-xl shadow-md hover:bg-primary-container transition-colors flex items-center space-x-2"
-                >
-                  <span className="material-symbols-outlined text-[18px]">send</span>
-                  <span>Gönder</span>
+                  <span className="material-symbols-outlined text-[18px]">{sending ? "hourglass_empty" : "send"}</span>
+                  <span>{sending ? "Gönderiliyor..." : "Gönder"}</span>
                 </button>
               </div>
             </form>

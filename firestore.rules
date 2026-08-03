@@ -3,16 +3,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Notlar — Şu an herkese açık (auth eklenince kısıtlanacak)
+    // Notlar — Sayfalar ve Bloklar
     match /pages/{pageId} {
       allow read, write: if true;
-
       match /blocks/{blockId} {
         allow read, write: if true;
       }
     }
 
-    // Diğer koleksiyonlar — varsayılan olarak kapalı
+    // Posta Hesapları (kimlik bilgileri)
+    match /mailAccounts/{accountId} {
+      allow read, write: if true;
+    }
+
+    // Varsayılan: Kapalı
     match /{document=**} {
       allow read, write: if false;
     }

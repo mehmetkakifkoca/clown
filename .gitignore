@@ -34,3 +34,4 @@ next-env.d.ts
 # macOS metadata
 ._*
 .DS_Store
+.env*
