@@ -1,6 +1,6 @@
 /**
  * lib/firestore/mailAccounts.ts
- * Posta hesabı kimlik bilgilerini Firestore'da sakla
+ * Posta hesabı kimlik bilgilerini Firestore'da sakla (OAuth Token Destekli)
  */
 import {
   doc,
@@ -12,18 +12,18 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { MailCredentials } from "@/lib/imap/outlook";
 
 export interface StoredMailAccount {
   id: string;
   email: string;
-  appPassword: string; // Gerçek uygulamada şifrelenmiş olmalı
   provider: "hotmail" | "gmail" | "imap";
   label: string;
-  createdAt: Date;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  createdAt?: string;
 }
 
-// Tüm bağlı hesapları listele
 export async function listMailAccounts(): Promise<StoredMailAccount[]> {
   const snap = await getDocs(collection(db, "mailAccounts"));
   return snap.docs.map((d) => ({
@@ -32,41 +32,27 @@ export async function listMailAccounts(): Promise<StoredMailAccount[]> {
   }));
 }
 
-// Hesap ekle / güncelle
 export async function saveMailAccount(
   id: string,
   email: string,
-  appPassword: string,
+  appPassword = "",
   provider: "hotmail" | "gmail" | "imap" = "hotmail",
-  label = "Hotmail"
+  label = "Hotmail",
+  accessToken?: string,
+  refreshToken?: string,
+  expiresAt?: number
 ): Promise<void> {
   await setDoc(doc(db, "mailAccounts", id), {
     email,
-    appPassword,
     provider,
     label,
-    createdAt: serverTimestamp(),
+    accessToken,
+    refreshToken,
+    expiresAt,
+    updatedAt: serverTimestamp(),
   });
 }
 
-// Hesabı sil
 export async function removeMailAccount(id: string): Promise<void> {
   await deleteDoc(doc(db, "mailAccounts", id));
-}
-
-// Tek hesabı getir
-export async function getMailAccount(
-  id: string
-): Promise<StoredMailAccount | null> {
-  const snap = await getDoc(doc(db, "mailAccounts", id));
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...(snap.data() as Omit<StoredMailAccount, "id">) };
-}
-
-// İlk kayıtlı hesabı getir (varsayılan)
-export async function getDefaultMailAccount(): Promise<MailCredentials | null> {
-  const accounts = await listMailAccounts();
-  if (accounts.length === 0) return null;
-  const acc = accounts[0];
-  return { email: acc.email, appPassword: acc.appPassword };
 }

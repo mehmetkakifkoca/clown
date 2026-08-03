@@ -1,31 +1,63 @@
 import { NextResponse } from "next/server";
-import { fetchInboxEmails } from "@/lib/imap/outlook";
-import { getDefaultMailAccount } from "@/lib/firestore/mailAccounts";
+import { fetchGraphMessages, refreshAccessToken } from "@/lib/microsoft-graph";
+import { listMailAccounts, saveMailAccount } from "@/lib/firestore/mailAccounts";
 
-// GET /api/mail/inbox?filter=all|unread|flagged
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const filter = searchParams.get("filter") ?? "all";
+    const filter = searchParams.get("filter") || "all";
 
-    const creds = await getDefaultMailAccount();
-    if (!creds) {
-      return NextResponse.json(
-        { error: "Bağlı posta hesabı yok. Ayarlar > Bağlı Hesaplar bölümünden ekleyin." },
-        { status: 404 }
-      );
+    const accounts = await listMailAccounts();
+    const activeAccount = accounts[0];
+
+    if (!activeAccount) {
+      return NextResponse.json({ error: "Bağlı e-posta hesabı bulunamadı." }, { status: 404 });
     }
 
-    let emails = await fetchInboxEmails(creds, 30);
+    // Token Süresi Dolmuşsa Refresh Et
+    let accessToken = activeAccount.accessToken;
+    if (activeAccount.expiresAt && Date.now() > activeAccount.expiresAt - 60000 && activeAccount.refreshToken) {
+      try {
+        const newTokens = await refreshAccessToken(activeAccount.refreshToken);
+        accessToken = newTokens.access_token;
 
-    if (filter === "unread") emails = emails.filter((e) => !e.isRead);
-    if (filter === "flagged") emails = emails.filter((e) => e.flags.has("\\Flagged"));
-    if (filter === "attachments") emails = emails.filter((e) => e.hasAttachments);
+        await saveMailAccount(
+          activeAccount.id,
+          activeAccount.email,
+          "",
+          "hotmail",
+          activeAccount.label,
+          newTokens.access_token,
+          newTokens.refresh_token,
+          Date.now() + newTokens.expires_in * 1000
+        );
+      } catch (e) {
+        console.error("Token yenileme hatası:", e);
+      }
+    }
 
-    return NextResponse.json(emails);
+    if (!accessToken) {
+      return NextResponse.json({ error: "E-posta erişim yetkisi geçersiz. Lütfen hesabınızı tekrar bağlayın." }, { status: 401 });
+    }
+
+    const graphMessages = await fetchGraphMessages(accessToken, 30);
+
+    const formattedMessages = graphMessages.map((msg: any) => ({
+      id: msg.id,
+      uid: msg.id,
+      subject: msg.subject || "(Konu yok)",
+      from: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || "Bilinmiyor",
+      fromEmail: msg.from?.emailAddress?.address || "",
+      date: new Date(msg.receivedDateTime).toLocaleString("tr-TR"),
+      snippet: msg.bodyPreview || "",
+      body: msg.body?.content || msg.bodyPreview || "",
+      isRead: msg.isRead,
+      hasAttachments: msg.hasAttachments,
+    }));
+
+    return NextResponse.json(formattedMessages);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-    console.error("IMAP hatası:", message);
-    return NextResponse.json({ error: `IMAP bağlantı hatası: ${message}` }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
