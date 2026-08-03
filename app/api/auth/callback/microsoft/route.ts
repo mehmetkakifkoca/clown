@@ -8,9 +8,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const error = searchParams.get("error");
+  const errorDesc = searchParams.get("error_description");
 
   if (error || !code) {
-    return NextResponse.redirect(new URL("/settings/accounts?error=auth_failed", request.url));
+    const errDetail = encodeURIComponent(`${error || "no_code"}: ${errorDesc || ""}`);
+    return NextResponse.redirect(new URL(`/settings/accounts?error=auth_failed&details=${errDetail}`, request.url));
   }
 
   try {
