@@ -13,6 +13,7 @@ interface RealEmail {
   snippet: string;
   isRead: boolean;
   hasAttachments: boolean;
+  provider?: string;
 }
 
 interface ConnectedAccount {
@@ -112,7 +113,7 @@ export default function InboxPage() {
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 bg-primary rounded-full animate-pulse" />
               <span className="text-[11px] font-semibold text-primary uppercase tracking-wider font-label-caps">
-                {connectedAccount ? connectedAccount.email : "Birleşik Posta Merkezi"}
+                Birleşik Posta Merkezi (Gmail & Hotmail)
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold font-headline-lg text-on-surface tracking-tight mt-0.5">
@@ -206,7 +207,9 @@ export default function InboxPage() {
                         <span className="material-symbols-outlined text-[13px] mr-1">attach_file</span>Ek
                       </span>
                     )}
-                    <span className="text-[10px] uppercase font-label-sm text-outline tracking-wider">HOTMAIL</span>
+                    <span className={`text-[10px] uppercase font-label-sm tracking-wider font-semibold px-2 py-0.5 rounded ${msg.provider === "gmail" ? "bg-red-50 text-red-600 border border-red-200" : "bg-blue-50 text-blue-600 border border-blue-200"}`}>
+                      {msg.provider === "gmail" ? "GMAIL" : "HOTMAIL"}
+                    </span>
                   </div>
                 </div>
               </div>
