@@ -12,12 +12,16 @@ interface ConnectedAccount {
 
 export default function AccountSettingsPage() {
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
-
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [notificationSubscribed, setNotificationSubscribed] = useState<boolean>(false);
+  const [notifLoading, setNotifLoading] = useState<boolean>(false);
 
   useEffect(() => {
     loadAccounts();
     if (typeof window !== "undefined") {
+      if ("Notification" in window && Notification.permission === "granted") {
+        setNotificationSubscribed(true);
+      }
       const params = new URLSearchParams(window.location.search);
       const details = params.get("details");
       const err = params.get("error");
@@ -64,6 +68,43 @@ export default function AccountSettingsPage() {
       )}
 
       <div className="space-y-6">
+        {/* Push Bildirim Kartı */}
+        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs flex items-center justify-between">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+              <span className="material-symbols-outlined text-2xl">notifications_active</span>
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-on-surface">PWA Anlık Bildirimler (Push)</h2>
+              <p className="text-xs text-secondary mt-0.5">
+                Yeni e-postalar geldiğinde kilit ekranına bildirim gönderilir (iOS 16.4+).
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              setNotifLoading(true);
+              try {
+                const { subscribeToPushNotifications } = await import("@/lib/push");
+                await subscribeToPushNotifications();
+                setNotificationSubscribed(true);
+                alert("Bildirimler başarıyla aktif edildi!");
+              } catch (err: any) {
+                alert(`Bildirim hatası: ${err.message}`);
+              }
+              setNotifLoading(false);
+            }}
+            disabled={notificationSubscribed || notifLoading}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all ${
+              notificationSubscribed
+                ? "bg-emerald-100 text-emerald-800 cursor-default"
+                : "bg-primary text-on-primary hover:bg-primary-container"
+            }`}
+          >
+            {notificationSubscribed ? "✓ Aktif" : notifLoading ? "İzin İsteniyor..." : "Bildirimleri Aç"}
+          </button>
+        </div>
+
         <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
           <h2 className="text-base font-bold text-on-surface mb-2">Microsoft Hotmail / Outlook Entegrasyonu</h2>
           <p className="text-xs text-secondary leading-relaxed mb-6">
