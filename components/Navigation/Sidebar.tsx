@@ -134,7 +134,7 @@ export function Sidebar() {
     <aside className="hidden md:flex flex-col w-72 h-screen fixed top-0 left-0 z-30 bg-surface-container-lowest border-r border-outline-variant/30 px-4 py-6 shadow-sm overflow-hidden">
       {/* Brand Header */}
       <div className="flex items-center space-x-3 px-2 mb-6 flex-shrink-0">
-        <img src="/logo-full.svg" alt="Clown" className="h-10 w-auto object-contain" />
+        <img src="/logo-full.png" alt="Clown" className="h-10 w-auto object-contain" />
       </div>
 
       <Suspense fallback={<div className="flex-1" />}>
