@@ -127,6 +127,48 @@ function InboxContent() {
         </div>
       </header>
 
+      {/* Mobil Hesap & Klasör Seçici Filtre Barı */}
+      <div className="md:hidden space-y-3 mb-5">
+        <div className="flex items-center space-x-2">
+          {/* Hesap Seçici */}
+          <div className="flex-1">
+            <label className="text-[10px] font-bold text-outline uppercase font-label-caps block mb-1">Hesap Seç:</label>
+            <select
+              value={accountParam}
+              onChange={(e) => {
+                const newAcc = e.target.value;
+                window.location.href = `/inbox?account=${newAcc}&folder=${folderParam}`;
+              }}
+              className="w-full px-3 py-2 text-xs font-semibold bg-surface-container-low text-on-surface rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary shadow-xs"
+            >
+              <option value="all">📬 Tüm Hesaplar (Birleşik)</option>
+              {connectedAccounts.map((acc) => (
+                <option key={acc.id} value={acc.provider}>
+                  {acc.provider === "gmail" ? "🔴 Google" : "🔵 Hotmail"} ({acc.email.split("@")[0]})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Klasör Seçici */}
+          <div className="flex-1">
+            <label className="text-[10px] font-bold text-outline uppercase font-label-caps block mb-1">Klasör Seç:</label>
+            <select
+              value={folderParam}
+              onChange={(e) => {
+                const newFolder = e.target.value;
+                window.location.href = `/inbox?account=${accountParam}&folder=${newFolder}`;
+              }}
+              className="w-full px-3 py-2 text-xs font-semibold bg-surface-container-low text-on-surface rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary shadow-xs"
+            >
+              <option value="inbox">📥 Gelen Kutusu</option>
+              <option value="sent">📤 Gönderilenler</option>
+              <option value="spam">🚫 Spam / Çöp</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* Durum Filtreleri */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-3 mb-6 scrollbar-none">
         {[
