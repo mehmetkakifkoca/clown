@@ -51,7 +51,8 @@ export async function fetchInboxEmails(
 
     try {
       // Son `limit` e-postayı getir (yeniden eskiye)
-      const total = client.mailbox.exists;
+      const total = client.mailbox ? client.mailbox.exists : 0;
+      if (total === 0) return [];
       const from = Math.max(1, total - limit + 1);
       const range = `${from}:${total}`;
 
@@ -83,9 +84,9 @@ export async function fetchInboxEmails(
           }) ?? "",
           snippet: bodyText.replace(/\s+/g, " ").trim().slice(0, 160),
           body: bodyText,
-          isRead: msg.flags.has("\\Seen"),
+          isRead: Boolean(msg.flags?.has("\\Seen")),
           hasAttachments: false,
-          flags: msg.flags,
+          flags: msg.flags ?? new Set(),
         });
       }
     } finally {
@@ -144,7 +145,7 @@ export async function fetchEmailById(
           body: bodyText,
           isRead: true,
           hasAttachments: false,
-          flags: msg.flags,
+          flags: msg.flags ?? new Set(),
         });
       }
 
