@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Notlar — Şu an herkese açık (auth eklenince kısıtlanacak)
+    match /pages/{pageId} {
+      allow read, write: if true;
+
+      match /blocks/{blockId} {
+        allow read, write: if true;
+      }
+    }
+
+    // Diğer koleksiyonlar — varsayılan olarak kapalı
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
