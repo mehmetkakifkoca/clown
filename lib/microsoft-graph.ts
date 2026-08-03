@@ -68,9 +68,9 @@ export async function refreshAccessToken(refreshToken: string) {
   return res.json();
 }
 
-// 4. Microsoft Graph API: Gelen Kutusu Mesajlarını Çekme
-export async function fetchGraphMessages(accessToken: string, limit = 20) {
-  const res = await fetch(`https://graph.microsoft.com/v1.0/me/messages?$top=${limit}&$select=id,subject,bodyPreview,from,toRecipients,receivedDateTime,isRead,hasAttachments,body`, {
+// 4. Microsoft Graph API: Klasöre Göre Mesajları Çekme
+export async function fetchGraphMessages(accessToken: string, limit = 20, folderPath = "inbox") {
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderPath}/messages?$top=${limit}&$select=id,subject,bodyPreview,from,toRecipients,receivedDateTime,isRead,hasAttachments,body`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
