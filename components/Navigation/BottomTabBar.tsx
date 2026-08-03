@@ -7,7 +7,7 @@ export function BottomTabBar() {
   const pathname = usePathname();
 
   const tabs = [
-    { name: "Gelen Kutusu", path: "/inbox", icon: "inbox" },
+    { name: "Posta", path: "/inbox", icon: "mail" },
     { name: "Takvim", path: "/calendar", icon: "calendar_today" },
     { name: "Notlar", path: "/notes", icon: "edit_note" },
     { name: "Hesaplar", path: "/accounts", icon: "analytics" },

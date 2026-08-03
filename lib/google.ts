@@ -76,10 +76,47 @@ export async function refreshGoogleAccessToken(refreshToken: string) {
   return res.json();
 }
 
+function decodeBase64Url(base64UrlStr: string) {
+  if (!base64UrlStr) return "";
+  let base64 = base64UrlStr.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4) base64 += "=";
+  try {
+    return decodeURIComponent(
+      escape(typeof window !== "undefined" ? window.atob(base64) : Buffer.from(base64, "base64").toString("binary"))
+    );
+  } catch {
+    return Buffer.from(base64, "base64").toString("utf-8");
+  }
+}
+
+function parseGmailBody(payload: any): string {
+  if (!payload) return "";
+  if (payload.body && payload.body.data) {
+    return decodeBase64Url(payload.body.data);
+  }
+  if (payload.parts && payload.parts.length > 0) {
+    // Önce html ara, yoksa text/plain
+    const htmlPart = payload.parts.find((p: any) => p.mimeType === "text/html");
+    if (htmlPart && htmlPart.body && htmlPart.body.data) {
+      return decodeBase64Url(htmlPart.body.data);
+    }
+    const textPart = payload.parts.find((p: any) => p.mimeType === "text/plain");
+    if (textPart && textPart.body && textPart.body.data) {
+      return decodeBase64Url(textPart.body.data);
+    }
+    // Özyinelemeli parçaları tara
+    for (const part of payload.parts) {
+      const res = parseGmailBody(part);
+      if (res) return res;
+    }
+  }
+  return "";
+}
+
 // 4. Gmail API: Mesajları Çekme
-export async function fetchGmailMessages(accessToken: string, limit = 20) {
-  // Önce mesaj listesini al
-  const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}`, {
+export async function fetchGmailMessages(accessToken: string, limit = 20, folder = "INBOX") {
+  const labelParam = folder === "SENT" ? "SENT" : folder === "SPAM" ? "SPAM" : "INBOX";
+  const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}&q=label:${labelParam}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
@@ -90,7 +127,6 @@ export async function fetchGmailMessages(accessToken: string, limit = 20) {
   const listData = await listRes.json();
   if (!listData.messages || listData.messages.length === 0) return [];
 
-  // Mesaj detaylarını paralel çek
   const detailPromises = listData.messages.map(async (item: { id: string }) => {
     const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${item.id}?format=full`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -108,8 +144,8 @@ export async function fetchGmailMessages(accessToken: string, limit = 20) {
     const from = getHeader("From");
     const date = getHeader("Date");
 
-    let snippet = msg.snippet || "";
-    let body = snippet;
+    const snippet = msg.snippet || "";
+    const body = parseGmailBody(msg.payload) || snippet;
 
     return {
       id: msg.id,

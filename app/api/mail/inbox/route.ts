@@ -7,6 +7,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const filter = searchParams.get("filter") || "all";
+    const accountFilter = searchParams.get("account") || "all"; // all | gmail | hotmail
+    const folderFilter = searchParams.get("folder") || "inbox";  // inbox | sent | spam
 
     const accounts = await listMailAccounts();
 
@@ -16,11 +18,14 @@ export async function GET(request: Request) {
 
     let allMessages: any[] = [];
 
-    // Tüm bağlı hesaplardan (Hotmail / Gmail) mesajları çek ve birleştir (Unified Inbox)
-    for (const acc of accounts) {
+    // Seçilen hesap ve klasöre göre filtrele
+    const targetAccounts = accountFilter === "all"
+      ? accounts
+      : accounts.filter((a) => a.provider === accountFilter);
+
+    for (const acc of targetAccounts) {
       let accessToken = acc.accessToken;
 
-      // Microsoft Token Yenileme
       if (acc.provider === "hotmail" && acc.expiresAt && Date.now() > acc.expiresAt - 60000 && acc.refreshToken) {
         try {
           const newTokens = await refreshAccessToken(acc.refreshToken);
@@ -29,7 +34,6 @@ export async function GET(request: Request) {
         } catch (e) { console.error("Microsoft token yenileme hatası:", e); }
       }
 
-      // Google Token Yenileme
       if (acc.provider === "gmail" && acc.expiresAt && Date.now() > acc.expiresAt - 60000 && acc.refreshToken) {
         try {
           const newTokens = await refreshGoogleAccessToken(acc.refreshToken);
@@ -56,6 +60,7 @@ export async function GET(request: Request) {
             isRead: msg.isRead,
             hasAttachments: msg.hasAttachments,
             provider: "hotmail",
+            accountEmail: acc.email,
           }));
           allMessages = allMessages.concat(formatted);
         } catch (e) { console.error("Microsoft mail hatası:", e); }
@@ -63,10 +68,12 @@ export async function GET(request: Request) {
 
       if (acc.provider === "gmail") {
         try {
-          const msgs = await fetchGmailMessages(accessToken, 20);
+          const gmailFolder = folderFilter === "sent" ? "SENT" : folderFilter === "spam" ? "SPAM" : "INBOX";
+          const msgs = await fetchGmailMessages(accessToken, 20, gmailFolder);
           const formatted = msgs.map((msg: any) => ({
             ...msg,
             rawDate: msg.date ? new Date(msg.date).getTime() : Date.now(),
+            accountEmail: acc.email,
           }));
           allMessages = allMessages.concat(formatted);
         } catch (e) { console.error("Gmail mail hatası:", e); }

@@ -1,79 +1,160 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
 
-export function Sidebar() {
+interface ConnectedAccount {
+  id: string;
+  email: string;
+  provider: string;
+  label: string;
+}
+
+function SidebarNavContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
+  const [mailOpen, setMailOpen] = useState(true);
 
-  const tabs = [
-    { name: "Gelen Kutusu", path: "/inbox", icon: "inbox", description: "E-posta & Birleşik Mesajlar" },
-    { name: "Takvim", path: "/calendar", icon: "calendar_today", description: "Program & Zaman Çizelgesi" },
-    { name: "Notlar", path: "/notes", icon: "edit_note", description: "Notion Tarzı Tuval" },
-    { name: "Hesaplar", path: "/accounts", icon: "analytics", description: "Instagram & Büyüme İstatistikleri" },
-    { name: "Ayarlar", path: "/settings/accounts", icon: "settings", description: "OAuth & Entegrasyon Ayarları" },
+  const currentAccount = searchParams.get("account") || "all";
+  const currentFolder = searchParams.get("folder") || "inbox";
+
+  useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  const loadAccounts = async () => {
+    try {
+      const res = await fetch("/api/mail/accounts");
+      const data = await res.json();
+      if (Array.isArray(data)) setAccounts(data);
+    } catch { /* ignore */ }
+  };
+
+  const navItems = [
+    { label: "Takvim", icon: "calendar_today", href: "/calendar", subtext: "Program & Zaman Çizelgesi" },
+    { label: "Notlar", icon: "edit_note", href: "/notes", subtext: "Notion Tarzı Tuval" },
+    { label: "Hesaplar", icon: "analytics", href: "/accounts", subtext: "Instagram & Büyüme İstatistikleri" },
+    { label: "Ayarlar", icon: "settings", href: "/settings/accounts", subtext: "OAuth & Entegrasyon Ayarları" },
   ];
 
   return (
-    <aside className="hidden md:flex flex-col w-72 bg-surface-container-lowest border-r border-outline-variant/30 flex-shrink-0 fixed top-0 left-0 h-screen z-40 justify-between">
-      {/* Scrollable inner content */}
-      <div className="flex flex-col flex-1 overflow-y-auto p-6 min-h-0">
-        {/* Brand / Full Logo */}
-        <div className="mb-8 px-1 flex-shrink-0">
-          <img
-            src="/logo-full.png"
-            alt="Clown"
-            className="w-full h-auto max-h-14 object-contain object-left"
-          />
+    <nav className="flex-1 space-y-1.5 overflow-y-auto pr-1 scrollbar-thin">
+      {/* Posta (Mail) Akordeon Grubu */}
+      <div className="space-y-1">
+        <div className={`flex items-center justify-between px-3 py-2.5 rounded-2xl transition-all duration-200 ${
+          pathname.startsWith("/inbox") ? "bg-primary-fixed/30 text-primary font-bold" : "text-on-surface hover:bg-surface-container-high"
+        }`}>
+          <Link href="/inbox?account=all&folder=inbox" className="flex items-center space-x-3 flex-1 min-w-0">
+            <span className="material-symbols-outlined text-[22px]">mail</span>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold tracking-tight">Posta</span>
+              <span className="text-[10px] opacity-75 font-label-caps">Tüm Hesaplar & Klasörler</span>
+            </div>
+          </Link>
+          <button onClick={() => setMailOpen(!mailOpen)} className="p-1 hover:bg-surface-container rounded-lg text-secondary">
+            <span className="material-symbols-outlined text-[18px] transition-transform duration-200" style={{ transform: mailOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+              expand_more
+            </span>
+          </button>
         </div>
 
-        {/* Navigation Items */}
-        <nav className="space-y-1.5 flex-1">
-          {tabs.map((tab) => {
-            const isActive =
-              pathname === tab.path ||
-              (tab.path === "/inbox" && pathname.startsWith("/inbox") && pathname !== "/settings/accounts");
+        {/* Akordeon Alt Sayfaları */}
+        {mailOpen && (
+          <div className="pl-4 pr-1 space-y-1 border-l-2 border-primary/20 ml-5 py-1">
+            {/* Tüm Mailler */}
+            <Link href="/inbox?account=all&folder=inbox" className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              pathname.startsWith("/inbox") && currentAccount === "all" ? "bg-primary text-on-primary shadow-xs" : "text-secondary hover:bg-surface-container-high hover:text-on-surface"
+            }`}>
+              <span className="material-symbols-outlined text-[16px]">inbox</span>
+              <span>Tüm Mailler</span>
+            </Link>
 
-            return (
-              <Link
-                key={tab.name}
-                href={tab.path}
-                className={`flex items-center space-x-3 px-3.5 py-3 rounded-2xl transition-all duration-200 group relative ${
-                  isActive
-                    ? "bg-primary text-on-primary shadow-md shadow-primary/15 font-semibold"
-                    : "text-secondary hover:bg-surface-container hover:text-on-surface"
-                }`}
-              >
-                <span className={`material-symbols-outlined text-[22px] ${isActive ? "text-on-primary" : "text-secondary group-hover:text-on-surface"}`}>
-                  {tab.icon}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold leading-none">{tab.name}</p>
-                  <p className={`text-[10px] truncate mt-1 ${isActive ? "text-on-primary/80" : "text-outline"}`}>
-                    {tab.description}
-                  </p>
+            {/* Hesap Bazlı Akordeonlar */}
+            {accounts.map((acc) => {
+              const isAccActive = currentAccount === acc.provider;
+              return (
+                <div key={acc.id} className="pt-1.5 space-y-0.5">
+                  <div className="flex items-center space-x-1.5 px-2 py-1 text-[11px] font-bold text-outline uppercase font-label-caps tracking-wider">
+                    <span className={`w-2 h-2 rounded-full ${acc.provider === "gmail" ? "bg-red-500" : "bg-blue-500"}`} />
+                    <span className="truncate">{acc.provider === "gmail" ? "Google" : "Hotmail"} ({acc.email.split("@")[0]})</span>
+                  </div>
+
+                  <Link href={`/inbox?account=${acc.provider}&folder=inbox`} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                    pathname.startsWith("/inbox") && isAccActive && currentFolder === "inbox" ? "bg-surface-container-highest text-primary font-bold" : "text-secondary hover:bg-surface-container-high"
+                  }`}>
+                    <span className="material-symbols-outlined text-[15px]">move_to_inbox</span>
+                    <span>Gelen Kutusu</span>
+                  </Link>
+
+                  <Link href={`/inbox?account=${acc.provider}&folder=sent`} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                    pathname.startsWith("/inbox") && isAccActive && currentFolder === "sent" ? "bg-surface-container-highest text-primary font-bold" : "text-secondary hover:bg-surface-container-high"
+                  }`}>
+                    <span className="material-symbols-outlined text-[15px]">send</span>
+                    <span>Gönderilenler</span>
+                  </Link>
+
+                  <Link href={`/inbox?account=${acc.provider}&folder=spam`} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                    pathname.startsWith("/inbox") && isAccActive && currentFolder === "spam" ? "bg-surface-container-highest text-primary font-bold" : "text-secondary hover:bg-surface-container-high"
+                  }`}>
+                    <span className="material-symbols-outlined text-[15px]">report</span>
+                    <span>Spam / Çöp</span>
+                  </Link>
                 </div>
-                {isActive && (
-                  <span className="w-2 h-2 rounded-full bg-on-primary absolute right-3 shadow-xs" />
-                )}
-              </Link>
-            );
-          })}
-        </nav>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* User / Profile Footer Widget — always at bottom */}
-      <div className="flex-shrink-0 p-6 pt-4 border-t border-outline-variant/20 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <img
-            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
-            alt="Kullanıcı avatarı"
-            className="w-9 h-9 rounded-full object-cover border border-outline-variant/40"
-          />
-          <div>
-            <p className="text-xs font-bold text-on-surface leading-tight">Mehmet Akif Koca</p>
-            <p className="text-[10px] text-outline font-label-sm">akif@clown.app</p>
-          </div>
+      {/* Diğer Menü Öğeleri */}
+      {navItems.map((item) => {
+        const isActive = pathname.startsWith(item.href);
+        return (
+          <Link key={item.href} href={item.href}
+            className={`flex items-center space-x-3 px-3 py-2.5 rounded-2xl transition-all duration-200 ${
+              isActive ? "bg-primary text-on-primary shadow-md font-bold" : "text-on-surface hover:bg-surface-container-high"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[22px]">{item.icon}</span>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold tracking-tight">{item.label}</span>
+              <span className="text-[10px] opacity-75 font-label-caps">{item.subtext}</span>
+            </div>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+export function Sidebar() {
+  return (
+    <aside className="hidden md:flex flex-col w-72 h-screen fixed top-0 left-0 z-30 bg-surface-container-lowest border-r border-outline-variant/30 px-4 py-6 shadow-sm overflow-hidden">
+      {/* Brand Header */}
+      <div className="flex items-center space-x-3 px-3 mb-8 flex-shrink-0">
+        <div className="w-10 h-10 rounded-2xl bg-white border border-outline-variant/30 shadow-sm flex items-center justify-center p-1 overflow-hidden flex-shrink-0">
+          <img src="/logo-mascot.png" alt="Clown Logo" className="w-full h-full object-contain" />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-xl font-bold tracking-tight text-on-surface font-headline-lg leading-none">CLOWN</span>
+          <span className="text-[10px] font-bold text-primary tracking-widest font-label-caps uppercase mt-0.5">Mehmet Akif Koca</span>
+        </div>
+      </div>
+
+      <Suspense fallback={<div className="flex-1" />}>
+        <SidebarNavContent />
+      </Suspense>
+
+      {/* User Footer Profile */}
+      <div className="pt-4 border-t border-outline-variant/30 flex items-center space-x-3 px-2 flex-shrink-0">
+        <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm flex-shrink-0">
+          MK
+        </div>
+        <div className="flex flex-col min-w-0">
+          <span className="text-xs font-bold text-on-surface truncate">Mehmet Akif Koca</span>
+          <span className="text-[10px] text-secondary font-label-sm truncate">m.akifkoca@hotmail.com</span>
         </div>
       </div>
     </aside>

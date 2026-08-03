@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 interface RealEmail {
   id: string;
@@ -14,6 +15,7 @@ interface RealEmail {
   isRead: boolean;
   hasAttachments: boolean;
   provider?: string;
+  accountEmail?: string;
 }
 
 interface ConnectedAccount {
@@ -23,30 +25,34 @@ interface ConnectedAccount {
   label: string;
 }
 
-export default function InboxPage() {
+import { Suspense } from "react";
+
+function InboxContent() {
+  const searchParams = useSearchParams();
+  const accountParam = searchParams.get("account") || "all";
+  const folderParam = searchParams.get("folder") || "inbox";
+
   const [filter, setFilter] = useState("all");
   const [messages, setMessages] = useState<RealEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [connectedAccount, setConnectedAccount] = useState<ConnectedAccount | null>(null);
+  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [showCompose, setShowCompose] = useState(false);
-  const [compose, setCompose] = useState({ to: "", subject: "", body: "" });
+  const [compose, setCompose] = useState({ to: "", subject: "", body: "", provider: "gmail" });
   const [sending, setSending] = useState(false);
 
-  useEffect(() => { checkAccount(); }, []);
-  useEffect(() => { if (connectedAccount) loadMessages(); }, [filter, connectedAccount]);
+  useEffect(() => { checkAccounts(); }, []);
+  useEffect(() => { loadMessages(); }, [filter, accountParam, folderParam]);
 
-  const checkAccount = async () => {
+  const checkAccounts = async () => {
     try {
       const res = await fetch("/api/mail/accounts");
       const accounts = await res.json();
-      if (Array.isArray(accounts) && accounts.length > 0) {
-        setConnectedAccount(accounts[0]);
-      } else {
-        setLoading(false);
+      if (Array.isArray(accounts)) {
+        setConnectedAccounts(accounts);
       }
     } catch {
-      setLoading(false);
+      /* ignore */
     }
   };
 
@@ -54,7 +60,7 @@ export default function InboxPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/mail/inbox?filter=${filter}`);
+      const res = await fetch(`/api/mail/inbox?filter=${filter}&account=${accountParam}&folder=${folderParam}`);
       const data = await res.json();
       if (data.error) { setError(data.error); setMessages([]); }
       else setMessages(data);
@@ -71,35 +77,17 @@ export default function InboxPage() {
       const res = await fetch("/api/mail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: compose.to, subject: compose.subject, text: compose.body }),
+        body: JSON.stringify({ to: compose.to, subject: compose.subject, text: compose.body, provider: compose.provider }),
       });
       const data = await res.json();
       if (data.error) alert(`Hata: ${data.error}`);
-      else { alert("E-posta gönderildi!"); setShowCompose(false); setCompose({ to: "", subject: "", body: "" }); }
+      else { alert("E-posta gönderildi!"); setShowCompose(false); setCompose({ to: "", subject: "", body: "", provider: "gmail" }); loadMessages(); }
     } catch { alert("Gönderim başarısız"); }
     setSending(false);
   };
 
-  // ── Hesap bağlı değil ─────────────────────────────────
-  if (!connectedAccount && !loading) {
-    return (
-      <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8 flex flex-col items-center justify-center">
-        <div className="max-w-md w-full text-center bg-surface-container-lowest rounded-3xl p-10 border border-outline-variant/30 shadow-lg">
-          <div className="w-16 h-16 rounded-full bg-primary-fixed/30 flex items-center justify-center mx-auto mb-4">
-            <span className="material-symbols-outlined text-3xl text-primary">mail_lock</span>
-          </div>
-          <h2 className="text-xl font-bold font-headline-lg text-on-surface mb-2">Henüz Hesap Bağlanmadı</h2>
-          <p className="text-sm text-secondary mb-6 leading-relaxed">
-            Hotmail / Outlook e-postalarını görmek için hesabınızı bağlayın. Azure gerekmez — sadece uygulama şifresi yeterli.
-          </p>
-          <Link href="/settings/accounts" className="inline-flex items-center space-x-2 px-6 py-3 bg-primary text-on-primary rounded-2xl font-semibold text-sm shadow-md hover:bg-primary-container transition-colors">
-            <span className="material-symbols-outlined text-[20px]">add_link</span>
-            <span>Hotmail Bağla</span>
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const folderTitle = folderParam === "sent" ? "Gönderilenler" : folderParam === "spam" ? "Spam / Çöp Kutusu" : "Gelen Kutusu";
+  const accountTitle = accountParam === "gmail" ? "Google / Gmail" : accountParam === "hotmail" ? "Microsoft / Hotmail" : "Tüm Hesaplar (Birleşik)";
 
   return (
     <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8">
@@ -113,11 +101,11 @@ export default function InboxPage() {
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 bg-primary rounded-full animate-pulse" />
               <span className="text-[11px] font-semibold text-primary uppercase tracking-wider font-label-caps">
-                Birleşik Posta Merkezi (Gmail & Hotmail)
+                {accountTitle}
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold font-headline-lg text-on-surface tracking-tight mt-0.5">
-              Gelen Kutusu
+              {folderTitle}
             </h1>
           </div>
         </div>
@@ -139,12 +127,11 @@ export default function InboxPage() {
         </div>
       </header>
 
-      {/* Filtreler */}
+      {/* Durum Filtreleri */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-3 mb-6 scrollbar-none">
         {[
           { id: "all", label: "Tüm Mesajlar", icon: "inbox" },
           { id: "unread", label: "Okunmamış", icon: "mark_email_unread" },
-          { id: "flagged", label: "İşaretli", icon: "star" },
           { id: "attachments", label: "Ekler", icon: "attach_file" },
         ].map((chip) => (
           <button key={chip.id} onClick={() => setFilter(chip.id)}
@@ -164,7 +151,7 @@ export default function InboxPage() {
           {[1, 2, 3, 4].map((n) => (
             <div key={n} className="h-24 bg-surface-container-low animate-pulse rounded-2xl border border-outline-variant/20" />
           ))}
-          <p className="text-center text-xs text-secondary pt-2 animate-pulse">IMAP sunucusuna bağlanılıyor...</p>
+          <p className="text-center text-xs text-secondary pt-2 animate-pulse">E-postalar senkronize ediliyor...</p>
         </div>
       ) : error ? (
         <div className="text-center py-16 bg-error-container/20 rounded-3xl border border-error/30 p-6">
@@ -178,7 +165,7 @@ export default function InboxPage() {
       ) : messages.length === 0 ? (
         <div className="text-center py-16 bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6">
           <span className="material-symbols-outlined text-4xl text-outline mb-2">drafts</span>
-          <p className="text-sm text-secondary font-medium">Bu görünümde mesaj yok</p>
+          <p className="text-sm text-secondary font-medium">Bu klasörde e-posta bulunamadı</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -189,9 +176,11 @@ export default function InboxPage() {
               {!msg.isRead && <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-primary" />}
 
               <div className="flex items-start space-x-4">
-                {/* Avatar harf */}
-                <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-lg font-bold text-primary">{msg.from.charAt(0).toUpperCase()}</span>
+                {/* Avatar */}
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  msg.provider === "gmail" ? "bg-red-50 text-red-600 border border-red-200" : "bg-blue-50 text-blue-600 border border-blue-200"
+                }`}>
+                  <span className="text-lg font-bold">{msg.from.charAt(0).toUpperCase()}</span>
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -207,9 +196,14 @@ export default function InboxPage() {
                         <span className="material-symbols-outlined text-[13px] mr-1">attach_file</span>Ek
                       </span>
                     )}
-                    <span className={`text-[10px] uppercase font-label-sm tracking-wider font-semibold px-2 py-0.5 rounded ${msg.provider === "gmail" ? "bg-red-50 text-red-600 border border-red-200" : "bg-blue-50 text-blue-600 border border-blue-200"}`}>
+                    <span className={`text-[10px] uppercase font-label-sm tracking-wider font-semibold px-2 py-0.5 rounded ${
+                      msg.provider === "gmail" ? "bg-red-50 text-red-600 border border-red-200" : "bg-blue-50 text-blue-600 border border-blue-200"
+                    }`}>
                       {msg.provider === "gmail" ? "GMAIL" : "HOTMAIL"}
                     </span>
+                    {msg.accountEmail && (
+                      <span className="text-[10px] text-outline font-mono opacity-75 truncate max-w-[140px]">{msg.accountEmail}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -230,12 +224,26 @@ export default function InboxPage() {
         <div className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-surface-container-lowest rounded-3xl p-6 shadow-2xl border border-outline-variant/30 animate-in slide-in-from-bottom duration-200">
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-surface-container-high">
-              <h2 className="text-lg font-bold font-headline-lg">Yeni Mesaj</h2>
+              <h2 className="text-lg font-bold font-headline-lg">Yeni E-posta Gönder</h2>
               <button onClick={() => setShowCompose(false)} className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-secondary">
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
             <form onSubmit={handleSend} className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-secondary block mb-1">Gönderen Hesap:</label>
+                <select
+                  value={compose.provider}
+                  onChange={(e) => setCompose({ ...compose, provider: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary text-on-surface"
+                >
+                  {connectedAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.provider}>
+                      {acc.provider === "gmail" ? "Google" : "Hotmail"} — {acc.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="text-xs font-medium text-secondary block mb-1">Alıcı:</label>
                 <input type="email" required placeholder="alici@example.com" value={compose.to}
@@ -271,5 +279,18 @@ export default function InboxPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function InboxPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background p-6 flex flex-col justify-center items-center">
+        <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-xs text-secondary">Posta yükleniyor...</p>
+      </div>
+    }>
+      <InboxContent />
+    </Suspense>
   );
 }
