@@ -7,6 +7,7 @@ interface GoogleCalendarInfo {
   name: string;
   color: string;
   primary: boolean;
+  accountEmail: string;
 }
 
 interface GoogleCalendarEvent {
@@ -23,6 +24,11 @@ interface GoogleCalendarEvent {
   calendarId: string;
   calendarName: string;
   calendarColor: string;
+  accountEmail: string;
+}
+
+function calendarKey(accountEmail: string, calendarId: string) {
+  return `${accountEmail}::${calendarId}`;
 }
 
 export default function CalendarPage() {
@@ -36,7 +42,7 @@ export default function CalendarPage() {
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [newEvent, setNewEvent] = useState({
-    calendarId: "",
+    calendarKey: "",
     title: "",
     startTime: "09:00",
     endTime: "10:00",
@@ -59,9 +65,9 @@ export default function CalendarPage() {
   }, []);
 
   useEffect(() => {
-    if (calendars.length > 0 && !newEvent.calendarId) {
+    if (calendars.length > 0 && !newEvent.calendarKey) {
       const primary = calendars.find((c) => c.primary) || calendars[0];
-      setNewEvent((prev) => ({ ...prev, calendarId: primary.id }));
+      setNewEvent((prev) => ({ ...prev, calendarKey: calendarKey(primary.accountEmail, primary.id) }));
     }
   }, [calendars]);
 
@@ -80,18 +86,21 @@ export default function CalendarPage() {
     }
   };
 
-  const toggleCalendar = (calendarId: string) => {
+  const toggleCalendar = (key: string) => {
     setHiddenCalendars((prev) => {
       const next = new Set(prev);
-      if (next.has(calendarId)) next.delete(calendarId);
-      else next.add(calendarId);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEvent.title.trim() || !newEvent.calendarId) return;
+    if (!newEvent.title.trim() || !newEvent.calendarKey) return;
+
+    const selectedCal = calendars.find((c) => calendarKey(c.accountEmail, c.id) === newEvent.calendarKey);
+    if (!selectedCal) return;
 
     setSaving(true);
     try {
@@ -100,7 +109,8 @@ export default function CalendarPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          calendarId: newEvent.calendarId,
+          accountEmail: selectedCal.accountEmail,
+          calendarId: selectedCal.id,
           title: newEvent.title,
           description: newEvent.description,
           location: newEvent.location,
@@ -128,7 +138,11 @@ export default function CalendarPage() {
   const handleDeleteEvent = async (evt: GoogleCalendarEvent) => {
     if (!confirm(`"${evt.title}" etkinliğini silmek istediğinize emin misiniz?`)) return;
     try {
-      const params = new URLSearchParams({ calendarId: evt.calendarId, eventId: evt.id });
+      const params = new URLSearchParams({
+        accountEmail: evt.accountEmail,
+        calendarId: evt.calendarId,
+        eventId: evt.id,
+      });
       const res = await fetch(`/api/calendar/events?${params.toString()}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -141,7 +155,7 @@ export default function CalendarPage() {
   };
 
   const visibleEvents = events.filter(
-    (evt) => evt.date === selectedDate && !hiddenCalendars.has(evt.calendarId)
+    (evt) => evt.date === selectedDate && !hiddenCalendars.has(calendarKey(evt.accountEmail, evt.calendarId))
   );
 
   return (
@@ -227,22 +241,25 @@ export default function CalendarPage() {
       {calendars.length > 0 && (
         <div className="flex items-center space-x-2 overflow-x-auto pb-4 mb-2 scrollbar-none">
           {calendars.map((cal) => {
-            const isHidden = hiddenCalendars.has(cal.id);
+            const key = calendarKey(cal.accountEmail, cal.id);
+            const isHidden = hiddenCalendars.has(key);
             return (
               <button
-                key={cal.id}
-                onClick={() => toggleCalendar(cal.id)}
+                key={key}
+                onClick={() => toggleCalendar(key)}
                 className={`flex-shrink-0 flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                   isHidden
                     ? "border-outline-variant/30 text-outline opacity-50"
                     : "border-outline-variant/30 text-on-surface bg-surface-container-lowest"
                 }`}
+                title={cal.accountEmail}
               >
                 <span
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                   style={{ backgroundColor: cal.color }}
                 />
                 <span>{cal.name}</span>
+                <span className="text-outline text-[10px]">· {cal.accountEmail}</span>
               </button>
             );
           })}
@@ -279,7 +296,7 @@ export default function CalendarPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {visibleEvents.map((evt) => (
               <div
-                key={`${evt.calendarId}-${evt.id}`}
+                key={`${evt.accountEmail}-${evt.calendarId}-${evt.id}`}
                 className="rounded-2xl p-4 md:p-5 border border-outline-variant/30 bg-surface-container-lowest text-on-surface transition-all duration-200 shadow-[0_4px_20px_-2px_rgba(182,23,34,0.06)] hover:border-primary/40"
                 style={{ borderLeftWidth: 4, borderLeftColor: evt.calendarColor }}
               >
@@ -291,7 +308,7 @@ export default function CalendarPage() {
                       >
                         {evt.calendarName}
                       </span>
-                      <span className="text-[10px] font-label-sm text-outline">{evt.provider}</span>
+                      <span className="text-[10px] font-label-sm text-outline">{evt.accountEmail}</span>
                     </div>
 
                     <h4 className="text-sm md:text-base font-bold leading-snug text-on-surface">{evt.title}</h4>
@@ -352,14 +369,14 @@ export default function CalendarPage() {
                 <label className="text-xs font-medium text-secondary block mb-1">Takvim:</label>
                 <select
                   required
-                  value={newEvent.calendarId}
-                  onChange={(e) => setNewEvent({ ...newEvent, calendarId: e.target.value })}
+                  value={newEvent.calendarKey}
+                  onChange={(e) => setNewEvent({ ...newEvent, calendarKey: e.target.value })}
                   className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary text-on-surface"
                 >
                   {calendars.length === 0 && <option value="">Takvim bulunamadı</option>}
                   {calendars.map((cal) => (
-                    <option key={cal.id} value={cal.id}>
-                      {cal.name}
+                    <option key={calendarKey(cal.accountEmail, cal.id)} value={calendarKey(cal.accountEmail, cal.id)}>
+                      {cal.name} ({cal.accountEmail})
                     </option>
                   ))}
                 </select>

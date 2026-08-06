@@ -26,7 +26,7 @@ export function getGoogleAuthUrl(): string {
     response_type: "code",
     scope: SCOPES,
     access_type: "offline",
-    prompt: "consent",
+    prompt: "select_account consent",
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }

@@ -60,7 +60,7 @@ export default function AccountSettingsPage() {
   };
 
   const hotmailAcc = accounts.find((a) => a.provider === "hotmail");
-  const googleAcc = accounts.find((a) => a.provider === "gmail");
+  const googleAccs = accounts.filter((a) => a.provider === "gmail");
 
   return (
     <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8">
@@ -166,34 +166,45 @@ export default function AccountSettingsPage() {
           )}
         </div>
 
-        {/* Google Kartı */}
-        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs flex items-center justify-between">
-          <div className="flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-red-50 flex items-center justify-center text-red-600 flex-shrink-0 border border-red-200">
-              <span className="material-symbols-outlined text-2xl">mark_email_unread</span>
+        {/* Google Kartı(ları) */}
+        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-red-50 flex items-center justify-center text-red-600 flex-shrink-0 border border-red-200">
+                <span className="material-symbols-outlined text-2xl">mark_email_unread</span>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-on-surface">Google / Gmail & Calendar</h2>
+                <p className="text-xs text-secondary mt-0.5">
+                  {googleAccs.length > 0
+                    ? `${googleAccs.length} hesap bağlı`
+                    : "Gmail ve Google Calendar etkinliklerinizi canlı senkronize edin"}
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-base font-bold text-on-surface">Google / Gmail & Calendar</h2>
-              <p className="text-xs text-secondary mt-0.5">
-                {googleAcc ? googleAcc.email : "Gmail ve Google Calendar etkinliklerinizi canlı senkronize edin"}
-              </p>
-            </div>
-          </div>
 
-          {googleAcc ? (
-            <div className="flex items-center space-x-2">
-              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
-              <button onClick={() => handleDisconnect(googleAcc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
-                Kaldır
-              </button>
-            </div>
-          ) : (
             <a
               href="/api/auth/google"
-              className="px-4 py-2.5 bg-red-600 text-white rounded-xl font-bold text-xs shadow-sm hover:bg-red-700 transition-all"
+              className="px-4 py-2.5 bg-red-600 text-white rounded-xl font-bold text-xs shadow-sm hover:bg-red-700 transition-all flex-shrink-0"
             >
-              Google Bağla
+              {googleAccs.length > 0 ? "Başka Hesap Ekle" : "Google Bağla"}
             </a>
+          </div>
+
+          {googleAccs.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-outline-variant/20 space-y-2">
+              {googleAccs.map((acc) => (
+                <div key={acc.id} className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-on-surface">{acc.email}</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
+                    <button onClick={() => handleDisconnect(acc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
+                      Kaldır
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
