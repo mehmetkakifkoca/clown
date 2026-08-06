@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchGraphMessages, refreshAccessToken } from "@/lib/microsoft-graph";
-import { fetchGmailMessages, refreshGoogleAccessToken } from "@/lib/google";
+import { fetchGmailMessages, getValidGoogleAccessToken } from "@/lib/google";
 import { listMailAccounts, saveMailAccount } from "@/lib/firestore/mailAccounts";
 
 export async function GET(request: Request) {
@@ -34,11 +34,9 @@ export async function GET(request: Request) {
         } catch (e) { console.error("Microsoft token yenileme hatası:", e); }
       }
 
-      if (acc.provider === "gmail" && acc.expiresAt && Date.now() > acc.expiresAt - 60000 && acc.refreshToken) {
+      if (acc.provider === "gmail") {
         try {
-          const newTokens = await refreshGoogleAccessToken(acc.refreshToken);
-          accessToken = newTokens.access_token;
-          await saveMailAccount(acc.id, acc.email, "", "gmail", acc.label, newTokens.access_token, acc.refreshToken, Date.now() + newTokens.expires_in * 1000);
+          accessToken = await getValidGoogleAccessToken(acc);
         } catch (e) { console.error("Google token yenileme hatası:", e); }
       }
 

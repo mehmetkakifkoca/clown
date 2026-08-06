@@ -2,6 +2,7 @@
  * lib/google.ts
  * Google OAuth 2.0, Gmail API & Google Calendar API Entegrasyonu
  */
+import { saveMailAccount, type StoredMailAccount } from "@/lib/firestore/mailAccounts";
 
 const CLIENT_ID = process.env.GMAIL_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || "";
@@ -74,6 +75,38 @@ export async function refreshGoogleAccessToken(refreshToken: string) {
   }
 
   return res.json();
+}
+
+// 3b. Geçerli Access Token'ı Getir (Gerekirse Otomatik Yenile)
+export async function getValidGoogleAccessToken(account: StoredMailAccount): Promise<string> {
+  if (!account.accessToken) {
+    throw new Error("Google hesabı için erişim tokenı bulunamadı.");
+  }
+
+  const isExpired = account.expiresAt ? Date.now() > account.expiresAt - 60000 : false;
+  if (!isExpired || !account.refreshToken) {
+    return account.accessToken;
+  }
+
+  const newTokens = await refreshGoogleAccessToken(account.refreshToken);
+  const newAccessToken = newTokens.access_token as string;
+  const newExpiresAt = Date.now() + newTokens.expires_in * 1000;
+
+  await saveMailAccount(
+    account.id,
+    account.email,
+    "",
+    "gmail",
+    account.label,
+    newAccessToken,
+    account.refreshToken,
+    newExpiresAt
+  );
+
+  account.accessToken = newAccessToken;
+  account.expiresAt = newExpiresAt;
+
+  return newAccessToken;
 }
 
 function decodeBase64Url(base64UrlStr: string) {
@@ -197,28 +230,185 @@ export async function sendGmail(accessToken: string, toEmail: string, subject: s
   return true;
 }
 
-// 6. Google Calendar API: Canlı Etkinlikleri Çekme
-export async function fetchGoogleCalendarEvents(accessToken: string) {
-  const now = new Date().toISOString();
-  const res = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${now}&orderBy=startTime&singleEvents=true&maxResults=25`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }
-  );
+// 6. Google Calendar API: Kullanıcının Tüm Takvimlerini Çekme
+export interface GoogleCalendarInfo {
+  id: string;
+  name: string;
+  color: string;
+  primary: boolean;
+}
+
+export async function fetchGoogleCalendarList(accessToken: string): Promise<GoogleCalendarInfo[]> {
+  const res = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 
   if (!res.ok) return [];
   const data = await res.json();
 
-  return (data.items || []).map((item: any) => ({
-    id: item.id,
-    title: item.summary || "Başlıksız Etkinlik",
-    date: item.start?.dateTime ? item.start.dateTime.split("T")[0] : item.start?.date,
-    startTime: item.start?.dateTime ? item.start.dateTime.split("T")[1].slice(0, 5) : "Tüm Gün",
-    endTime: item.end?.dateTime ? item.end.dateTime.split("T")[1].slice(0, 5) : "Tüm Gün",
-    location: item.location || "",
-    category: "Google Calendar",
-    isUrgent: false,
-    provider: "Google",
-  }));
+  return (data.items || [])
+    .filter((cal: any) => cal.selected !== false)
+    .map((cal: any) => ({
+      id: cal.id,
+      name: cal.summaryOverride || cal.summary || cal.id,
+      color: cal.backgroundColor || "#4285F4",
+      primary: Boolean(cal.primary),
+    }));
+}
+
+// 7. Google Calendar API: Tüm Takvimlerden Etkinlikleri Çekme
+export async function fetchGoogleCalendarEvents(accessToken: string, days = 30) {
+  const calendars = await fetchGoogleCalendarList(accessToken);
+  if (calendars.length === 0) return [];
+
+  const now = new Date();
+  const timeMin = now.toISOString();
+  const timeMax = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+
+  const eventLists = await Promise.all(
+    calendars.map(async (cal) => {
+      try {
+        const params = new URLSearchParams({
+          timeMin,
+          timeMax,
+          orderBy: "startTime",
+          singleEvents: "true",
+          maxResults: "50",
+        });
+        const res = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?${params.toString()}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (!res.ok) return [];
+        const data = await res.json();
+
+        return (data.items || []).map((item: any) => ({
+          id: item.id,
+          title: item.summary || "Başlıksız Etkinlik",
+          description: item.description || "",
+          date: item.start?.dateTime ? item.start.dateTime.split("T")[0] : item.start?.date,
+          startTime: item.start?.dateTime ? item.start.dateTime.split("T")[1].slice(0, 5) : "Tüm Gün",
+          endTime: item.end?.dateTime ? item.end.dateTime.split("T")[1].slice(0, 5) : "Tüm Gün",
+          startDateTime: item.start?.dateTime || item.start?.date,
+          endDateTime: item.end?.dateTime || item.end?.date,
+          location: item.location || "",
+          category: "Google Calendar",
+          isUrgent: false,
+          provider: "Google",
+          calendarId: cal.id,
+          calendarName: cal.name,
+          calendarColor: cal.color,
+        }));
+      } catch {
+        return [];
+      }
+    })
+  );
+
+  return eventLists.flat().sort((a, b) => {
+    const aTime = a.startDateTime ? new Date(a.startDateTime).getTime() : 0;
+    const bTime = b.startDateTime ? new Date(b.startDateTime).getTime() : 0;
+    return aTime - bTime;
+  });
+}
+
+// 8. Google Calendar API: Yeni Etkinlik Oluşturma
+interface GoogleCalendarEventInput {
+  title: string;
+  description?: string;
+  location?: string;
+  start: string;
+  end: string;
+  allDay?: boolean;
+  timeZone?: string;
+}
+
+function buildGoogleEventBody(event: Partial<GoogleCalendarEventInput>) {
+  const body: any = {};
+  if (event.title !== undefined) body.summary = event.title;
+  if (event.description !== undefined) body.description = event.description;
+  if (event.location !== undefined) body.location = event.location;
+
+  if (event.start !== undefined) {
+    body.start = event.allDay
+      ? { date: event.start }
+      : { dateTime: event.start, timeZone: event.timeZone || "UTC" };
+  }
+  if (event.end !== undefined) {
+    body.end = event.allDay
+      ? { date: event.end }
+      : { dateTime: event.end, timeZone: event.timeZone || "UTC" };
+  }
+
+  return body;
+}
+
+export async function createGoogleCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  event: GoogleCalendarEventInput
+) {
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildGoogleEventBody(event)),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Etkinlik oluşturulamadı: ${errText}`);
+  }
+
+  return res.json();
+}
+
+// 9. Google Calendar API: Etkinlik Güncelleme
+export async function updateGoogleCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  updates: Partial<GoogleCalendarEventInput>
+) {
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildGoogleEventBody(updates)),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Etkinlik güncellenemedi: ${errText}`);
+  }
+
+  return res.json();
+}
+
+// 10. Google Calendar API: Etkinlik Silme
+export async function deleteGoogleCalendarEvent(accessToken: string, calendarId: string, eventId: string) {
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!res.ok && res.status !== 410) {
+    const errText = await res.text();
+    throw new Error(`Etkinlik silinemedi: ${errText}`);
+  }
+
+  return true;
 }

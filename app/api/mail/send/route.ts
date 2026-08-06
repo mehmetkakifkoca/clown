@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sendGraphMail } from "@/lib/microsoft-graph";
-import { sendGmail } from "@/lib/google";
+import { sendGmail, getValidGoogleAccessToken } from "@/lib/google";
 import { listMailAccounts } from "@/lib/firestore/mailAccounts";
 
 export async function POST(request: Request) {
@@ -18,7 +18,8 @@ export async function POST(request: Request) {
     }
 
     if (targetAccount.provider === "gmail") {
-      await sendGmail(targetAccount.accessToken, to, subject, text);
+      const accessToken = await getValidGoogleAccessToken(targetAccount);
+      await sendGmail(accessToken, to, subject, text);
     } else {
       await sendGraphMail(targetAccount.accessToken, to, subject, text);
     }

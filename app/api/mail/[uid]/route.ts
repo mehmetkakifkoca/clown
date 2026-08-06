@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchGraphMessages } from "@/lib/microsoft-graph";
-import { fetchGmailMessages } from "@/lib/google";
+import { fetchGmailMessages, getValidGoogleAccessToken } from "@/lib/google";
 import { listMailAccounts } from "@/lib/firestore/mailAccounts";
 
 // GET /api/mail/[uid] -> Mesaj detayını hem Gmail hem Hotmail için çek
@@ -47,7 +47,8 @@ export async function GET(
     const gmailAcc = accounts.find((a) => a.provider === "gmail");
     if (gmailAcc && gmailAcc.accessToken) {
       try {
-        const msgs = await fetchGmailMessages(gmailAcc.accessToken, 50);
+        const accessToken = await getValidGoogleAccessToken(gmailAcc);
+        const msgs = await fetchGmailMessages(accessToken, 50);
         const target = msgs.find((m: any) => m.id === uid);
         if (target) {
           return NextResponse.json({
