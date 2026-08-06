@@ -243,7 +243,10 @@ export async function fetchGoogleCalendarList(accessToken: string): Promise<Goog
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Takvim listesi çekilemedi (${res.status}): ${errText}`);
+  }
   const data = await res.json();
 
   return (data.items || [])
