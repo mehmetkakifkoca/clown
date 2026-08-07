@@ -1,6 +1,6 @@
 /**
  * lib/firestore/mailAccounts.ts
- * Posta hesabı kimlik bilgilerini Firestore'da sakla (OAuth Token Destekli)
+ * Posta hesabı kimlik bilgilerini Firestore'da sakla (OAuth Token Destekli & IMAP Destekli)
  */
 import {
   doc,
@@ -18,10 +18,24 @@ export interface StoredMailAccount {
   email: string;
   provider: "hotmail" | "gmail" | "imap";
   label: string;
+  
+  // Visibility toggle
+  isHidden?: boolean;
+  
+  // OAuth credentials
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: number;
+  
+  // IMAP/SMTP credentials
+  appPassword?: string;
+  imapHost?: string;
+  imapPort?: number;
+  smtpHost?: string;
+  smtpPort?: number;
+  
   createdAt?: string;
+  updatedAt?: any;
 }
 
 export async function listMailAccounts(): Promise<StoredMailAccount[]> {
@@ -40,17 +54,30 @@ export async function saveMailAccount(
   label = "Hotmail",
   accessToken?: string,
   refreshToken?: string,
-  expiresAt?: number
+  expiresAt?: number,
+  imapHost?: string,
+  imapPort?: number,
+  smtpHost?: string,
+  smtpPort?: number
 ): Promise<void> {
   await setDoc(doc(db, "mailAccounts", id), {
     email,
     provider,
     label,
+    appPassword, // Stored for IMAP
     accessToken,
     refreshToken,
     expiresAt,
+    imapHost,
+    imapPort,
+    smtpHost,
+    smtpPort,
     updatedAt: serverTimestamp(),
-  });
+  }, { merge: true });
+}
+
+export async function toggleMailAccountVisibility(id: string, isHidden: boolean): Promise<void> {
+  await setDoc(doc(db, "mailAccounts", id), { isHidden }, { merge: true });
 }
 
 export async function removeMailAccount(id: string): Promise<void> {

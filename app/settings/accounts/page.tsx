@@ -8,6 +8,7 @@ interface ConnectedAccount {
   email: string;
   provider: string;
   label: string;
+  isHidden?: boolean;
 }
 
 export default function AccountSettingsPage() {
@@ -15,6 +16,18 @@ export default function AccountSettingsPage() {
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [notificationSubscribed, setNotificationSubscribed] = useState<boolean>(false);
   const [notifLoading, setNotifLoading] = useState<boolean>(false);
+  
+  // IMAP State
+  const [showImapModal, setShowImapModal] = useState(false);
+  const [imapLoading, setImapLoading] = useState(false);
+  const [imapForm, setImapForm] = useState({
+    email: "",
+    password: "",
+    imapHost: "imap.all-inkl.com",
+    imapPort: 993,
+    smtpHost: "smtp.all-inkl.com",
+    smtpPort: 465,
+  });
 
   useEffect(() => {
     loadAccounts();
@@ -45,6 +58,22 @@ export default function AccountSettingsPage() {
     loadAccounts();
   };
 
+  const handleToggleVisibility = async (id: string, currentIsHidden: boolean) => {
+    try {
+      // Optimistic update
+      setAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, isHidden: !currentIsHidden } : acc));
+      await fetch(`/api/mail/accounts`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, isHidden: !currentIsHidden })
+      });
+      loadAccounts();
+    } catch (e) {
+      console.error(e);
+      loadAccounts();
+    }
+  };
+
   const sendTestNotification = async () => {
     try {
       const res = await fetch("/api/cron/check-emails");
@@ -59,8 +88,38 @@ export default function AccountSettingsPage() {
     }
   };
 
+  const handleImapSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setImapLoading(true);
+    try {
+      const res = await fetch("/api/mail/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "imap",
+          email: imapForm.email,
+          appPassword: imapForm.password,
+          imapHost: imapForm.imapHost,
+          imapPort: imapForm.imapPort,
+          smtpHost: imapForm.smtpHost,
+          smtpPort: imapForm.smtpPort,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setShowImapModal(false);
+      setImapForm({ ...imapForm, email: "", password: "" });
+      loadAccounts();
+    } catch (err: any) {
+      alert(`Bağlantı Hatası: ${err.message}`);
+    } finally {
+      setImapLoading(false);
+    }
+  };
+
   const hotmailAcc = accounts.find((a) => a.provider === "hotmail");
   const googleAccs = accounts.filter((a) => a.provider === "gmail");
+  const imapAccs = accounts.filter((a) => a.provider === "imap");
 
   return (
     <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8">
@@ -135,6 +194,52 @@ export default function AccountSettingsPage() {
           </div>
         </div>
 
+        {/* IMAP / Webmail Kartı */}
+        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-600 flex-shrink-0 border border-orange-200">
+                <span className="material-symbols-outlined text-2xl">dns</span>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-on-surface">Webmail / Özel IMAP Sunucusu</h2>
+                <p className="text-xs text-secondary mt-0.5">
+                  All-Inkl, Yandex veya kendi alan adınızdaki mailleri bağlayın
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowImapModal(true)}
+              className="px-4 py-2.5 bg-orange-600 text-white rounded-xl font-bold text-xs shadow-sm hover:bg-orange-700 transition-all flex-shrink-0"
+            >
+              Hesap Ekle
+            </button>
+          </div>
+
+          {imapAccs.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-outline-variant/20 space-y-2">
+              {imapAccs.map((acc) => (
+                <div key={acc.id} className={`flex items-center justify-between p-2 rounded-xl transition-colors ${acc.isHidden ? 'opacity-60 bg-surface-container-lowest' : 'bg-surface-container-low/30'}`}>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-medium text-on-surface">{acc.email}</span>
+                    {acc.isHidden && <span className="text-[10px] bg-surface-container text-secondary px-2 rounded-md font-label-caps">Gizlendi</span>}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
+                    <button onClick={() => handleToggleVisibility(acc.id, !!acc.isHidden)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${acc.isHidden ? 'text-secondary hover:bg-surface-container' : 'text-primary hover:bg-primary/10'}`} title={acc.isHidden ? "Ana Sayfada Göster" : "Ana Sayfadan Gizle"}>
+                      <span className="material-symbols-outlined text-[18px]">{acc.isHidden ? "visibility_off" : "visibility"}</span>
+                    </button>
+                    <button onClick={() => handleDisconnect(acc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
+                      Kaldır
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Microsoft Kartı */}
         <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs flex items-center justify-between">
           <div className="flex items-center space-x-3.5">
@@ -152,6 +257,9 @@ export default function AccountSettingsPage() {
           {hotmailAcc ? (
             <div className="flex items-center space-x-2">
               <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
+              <button onClick={() => handleToggleVisibility(hotmailAcc.id, !!hotmailAcc.isHidden)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${hotmailAcc.isHidden ? 'text-secondary hover:bg-surface-container' : 'text-primary hover:bg-primary/10'}`} title={hotmailAcc.isHidden ? "Ana Sayfada Göster" : "Ana Sayfadan Gizle"}>
+                <span className="material-symbols-outlined text-[18px]">{hotmailAcc.isHidden ? "visibility_off" : "visibility"}</span>
+              </button>
               <button onClick={() => handleDisconnect(hotmailAcc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
                 Kaldır
               </button>
@@ -194,10 +302,16 @@ export default function AccountSettingsPage() {
           {googleAccs.length > 0 && (
             <div className="mt-4 pt-4 border-t border-outline-variant/20 space-y-2">
               {googleAccs.map((acc) => (
-                <div key={acc.id} className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-on-surface">{acc.email}</span>
+                <div key={acc.id} className={`flex items-center justify-between p-2 rounded-xl transition-colors ${acc.isHidden ? 'opacity-60 bg-surface-container-lowest' : 'bg-surface-container-low/30'}`}>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-medium text-on-surface">{acc.email}</span>
+                    {acc.isHidden && <span className="text-[10px] bg-surface-container text-secondary px-2 rounded-md font-label-caps">Gizlendi</span>}
+                  </div>
                   <div className="flex items-center space-x-2">
                     <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
+                    <button onClick={() => handleToggleVisibility(acc.id, !!acc.isHidden)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${acc.isHidden ? 'text-secondary hover:bg-surface-container' : 'text-primary hover:bg-primary/10'}`} title={acc.isHidden ? "Ana Sayfada Göster" : "Ana Sayfadan Gizle"}>
+                      <span className="material-symbols-outlined text-[18px]">{acc.isHidden ? "visibility_off" : "visibility"}</span>
+                    </button>
                     <button onClick={() => handleDisconnect(acc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
                       Kaldır
                     </button>
@@ -208,6 +322,114 @@ export default function AccountSettingsPage() {
           )}
         </div>
       </div>
+
+      {/* IMAP Bağlantı Modalı */}
+      {showImapModal && (
+        <div className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-surface-container-lowest rounded-3xl p-6 shadow-2xl border border-outline-variant/30">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-surface-container-high">
+              <h2 className="text-lg font-bold font-headline-lg text-on-surface">Özel IMAP Hesabı</h2>
+              <button
+                onClick={() => setShowImapModal(false)}
+                className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-secondary hover:text-on-surface"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleImapSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-secondary block mb-1">E-posta Adresi:</label>
+                <input
+                  type="email"
+                  required
+                  value={imapForm.email}
+                  onChange={(e) => setImapForm({ ...imapForm, email: e.target.value })}
+                  placeholder="örn. isminiz@alanadiniz.com"
+                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-orange-500 text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-secondary block mb-1">Şifre:</label>
+                <input
+                  type="password"
+                  required
+                  value={imapForm.password}
+                  onChange={(e) => setImapForm({ ...imapForm, password: e.target.value })}
+                  placeholder="E-posta şifreniz"
+                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-orange-500 text-on-surface"
+                />
+              </div>
+              
+              <div className="p-3 bg-orange-50/50 rounded-xl border border-orange-200/50 space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs font-bold text-orange-900/70 block mb-1">IMAP Sunucusu:</label>
+                    <input
+                      type="text"
+                      required
+                      value={imapForm.imapHost}
+                      onChange={(e) => setImapForm({ ...imapForm, imapHost: e.target.value })}
+                      className="w-full px-3 py-2 text-xs bg-white rounded-lg border border-orange-200 focus:outline-none focus:border-orange-500 text-orange-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-orange-900/70 block mb-1">Port:</label>
+                    <input
+                      type="number"
+                      required
+                      value={imapForm.imapPort}
+                      onChange={(e) => setImapForm({ ...imapForm, imapPort: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2 text-xs bg-white rounded-lg border border-orange-200 focus:outline-none focus:border-orange-500 text-orange-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs font-bold text-orange-900/70 block mb-1">SMTP Sunucusu:</label>
+                    <input
+                      type="text"
+                      required
+                      value={imapForm.smtpHost}
+                      onChange={(e) => setImapForm({ ...imapForm, smtpHost: e.target.value })}
+                      className="w-full px-3 py-2 text-xs bg-white rounded-lg border border-orange-200 focus:outline-none focus:border-orange-500 text-orange-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-orange-900/70 block mb-1">Port:</label>
+                    <input
+                      type="number"
+                      required
+                      value={imapForm.smtpPort}
+                      onChange={(e) => setImapForm({ ...imapForm, smtpPort: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2 text-xs bg-white rounded-lg border border-orange-200 focus:outline-none focus:border-orange-500 text-orange-900"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowImapModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-secondary hover:bg-surface-container rounded-xl transition-colors"
+                >
+                  İptal
+                </button>
+                <button
+                  type="submit"
+                  disabled={imapLoading}
+                  className="px-5 py-2.5 text-xs font-extrabold bg-orange-600 text-white rounded-xl shadow-md hover:bg-orange-700 transition-all flex items-center disabled:opacity-50"
+                >
+                  {imapLoading ? "Bağlanıyor..." : "Hesabı Ekle"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

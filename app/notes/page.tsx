@@ -39,21 +39,26 @@ function NotesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Route query params driving state
+  const folderParam = searchParams.get("folder") || "";
   const activePageId = searchParams.get("id") || "";
   const currentView = searchParams.get("view") || ""; // favorites | recent | trash | archive | ""
   const highlightTaskId = searchParams.get("highlightTask") || "";
 
+  // Data states
   const [pages, setPages] = useState<PageItem[]>([]);
   const [recentPages, setRecentPages] = useState<PageItem[]>([]);
   const [activePage, setActivePage] = useState<PageItem | null>(null);
   const [blocks, setBlocks] = useState<BlockItem[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   
+  // UI States
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Modals for Create/Move
   const [showMoveModal, setShowMoveModal] = useState(false);
@@ -62,6 +67,23 @@ function NotesContent() {
   const [createTarget, setCreateTarget] = useState({ name: "" });
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Helper to update query parameters
+  const updateParams = (newParams: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(newParams).forEach(([key, val]) => {
+      if (val === null) {
+        params.delete(key);
+      } else {
+        params.set(key, val);
+      }
+    });
+    router.push(`/notes?${params.toString()}`);
+  };
+
+  const clearAllParams = () => {
+    router.push("/notes");
+  };
 
   useEffect(() => {
     loadAllPages();
@@ -110,13 +132,30 @@ function NotesContent() {
       if (Array.isArray(allPages)) {
         setPages(allPages);
         const p = allPages.find((x) => x.id === pageId);
-        if (p) setActivePage(p);
+        if (p) {
+          setActivePage(p);
+          // Mark page as opened recently
+          fetch(`/api/pages`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: p.id, lastOpenedAt: new Date().toISOString() }),
+          }).catch(() => {});
+        }
       }
 
       const resBlocks = await fetch(`/api/pages/${pageId}/blocks`);
       const blocksData = await resBlocks.json();
       if (Array.isArray(blocksData)) {
-        setBlocks(blocksData);
+        // Map database blockType to frontend type
+        const formatted = blocksData.map((b: any) => ({
+          id: b.id,
+          type: b.blockType || "paragraph",
+          content: b.content || "",
+          checked: b.checked || false,
+          toggleBody: b.toggleBody || "",
+          properties: b.properties || {},
+        }));
+        setBlocks(formatted);
       }
     } catch {
       setSaveStatus("error");
@@ -131,12 +170,20 @@ function NotesContent() {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(async () => {
       try {
+        const payloadBlocks = updatedBlocks.map(b => ({
+          id: b.id,
+          blockType: b.type,
+          content: b.content,
+          checked: b.checked,
+          toggleBody: b.toggleBody,
+          properties: b.properties,
+        }));
         const res = await fetch(`/api/pages/${activePageId}/blocks`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: updatedTitle !== undefined ? updatedTitle : (activePage?.title || "Başlıksız Sayfa"),
-            blocks: updatedBlocks,
+            title: updatedTitle !== undefined ? updatedTitle : (activePage?.title || "Başlıksız Not Defteri"),
+            blocks: payloadBlocks,
           }),
         });
         if (res.ok) {
@@ -198,92 +245,90 @@ function NotesContent() {
 
   const removeBlock = (index: number) => {
     if (blocks.length <= 1) return;
-    const updated = blocks.filter((_, i) => i !== index);
+    const updated = blocks.filter((_, idx) => idx !== index);
     setBlocks(updated);
     triggerAutoSave(updated);
   };
 
-  // Convert selected block text/content to a subpage recursively
+  const handleKeyDown = (e: React.KeyboardEvent, index: number, block: BlockItem) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      addBlock("paragraph", index);
+    } else if (e.key === "Backspace" && !block.content) {
+      e.preventDefault();
+      removeBlock(index);
+    }
+  };
+
   const handleConvertToSubpage = async (index: number, block: BlockItem) => {
+    if (!block.content.trim()) return;
     try {
-      const titleText = block.content.trim() || "Yeni Alt Sayfa";
       const res = await fetch("/api/pages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: titleText,
+          title: block.content,
           parentPageId: activePageId,
         }),
       });
       const newPage = await res.json();
-
-      const updated = [...blocks];
-      updated[index].type = "subpage";
-      updated[index].content = newPage.title;
-      updated[index].properties = { pageId: newPage.id };
-
-      setBlocks(updated);
-      triggerAutoSave(updated);
       window.dispatchEvent(new Event("refresh-sidebar"));
+
+      const updatedBlocks = [...blocks];
+      updatedBlocks[index] = {
+        id: block.id,
+        type: "subpage",
+        content: block.content,
+        checked: false,
+        properties: { pageId: newPage.id },
+      };
+      setBlocks(updatedBlocks);
+      triggerAutoSave(updatedBlocks);
     } catch {}
   };
 
-  const handleMovePage = async () => {
-    try {
-      const targetParentId = moveTarget.targetParentPageId === "null" ? null : moveTarget.targetParentPageId;
-      await fetch("/api/pages", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: moveTarget.id, parentPageId: targetParentId }),
-      });
-      setShowMoveModal(false);
-      loadAllPages();
-      window.dispatchEvent(new Event("refresh-sidebar"));
-    } catch {}
-  };
-
-  const handleCreatePage = async (parentPageId: string | null = null, customTitle?: string) => {
+  const handleCreatePage = async (parentId: string | null, customTitle?: string) => {
     try {
       const res = await fetch("/api/pages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: customTitle || (parentPageId ? "Yeni Alt Sayfa" : "Yeni Defter"),
-          parentPageId,
+          title: customTitle || "Başlıksız Not",
+          parentPageId: parentId,
         }),
       });
       const newPage = await res.json();
-      loadAllPages();
       window.dispatchEvent(new Event("refresh-sidebar"));
-      router.push(`/notes?id=${newPage.id}`);
-    } catch {}
-  };
-
-  const handleDuplicatePage = async (pageId: string) => {
-    try {
-      const res = await fetch("/api/pages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ duplicateFromId: pageId }),
-      });
-      const duplicated = await res.json();
-      loadAllPages();
-      window.dispatchEvent(new Event("refresh-sidebar"));
-      router.push(`/notes?id=${duplicated.id}`);
+      updateParams({ folder: parentId || "all", id: newPage.id });
     } catch {}
   };
 
   const handleSoftDeletePage = async (pageId: string) => {
-    if (!confirm("Bu sayfayı çöp kutusuna taşımak istediğinizden emin misiniz?")) return;
     try {
       await fetch("/api/pages", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: pageId, deleted: true }),
       });
-      loadAllPages();
       window.dispatchEvent(new Event("refresh-sidebar"));
-      router.push("/notes");
+      if (activePageId === pageId) {
+        updateParams({ id: null });
+      } else {
+        loadAllPages();
+      }
+    } catch {}
+  };
+
+  const handleHardDeletePage = async (pageId: string) => {
+    if (!confirm("Bu notu kalıcı olarak silmek istediğinize emin misiniz?")) return;
+    try {
+      await fetch(`/api/pages?id=${pageId}`, { method: "DELETE" });
+      window.dispatchEvent(new Event("refresh-sidebar"));
+      if (activePageId === pageId) {
+        updateParams({ id: null });
+      } else {
+        loadAllPages();
+      }
     } catch {}
   };
 
@@ -294,760 +339,767 @@ function NotesContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: pageId, restore: true }),
       });
-      loadAllPages();
       window.dispatchEvent(new Event("refresh-sidebar"));
+      loadAllPages();
     } catch {}
   };
 
-  const handleHardDeletePage = async (pageId: string) => {
-    if (!confirm("Bu sayfayı kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz!")) return;
+  const handleDuplicatePage = async (pageId: string) => {
     try {
-      await fetch(`/api/pages?id=${pageId}`, { method: "DELETE" });
-      loadAllPages();
+      await fetch("/api/pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ duplicateFromId: pageId }),
+      });
       window.dispatchEvent(new Event("refresh-sidebar"));
+      loadAllPages();
     } catch {}
   };
 
-  // Keyboard custom backspace handler
-  const handleKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
-    index: number,
-    block: BlockItem
-  ) => {
-    if (e.key === "Backspace" && block.content === "") {
-      if (block.type !== "paragraph") {
-        e.preventDefault();
-        const updated = [...blocks];
-        updated[index].type = "paragraph";
-        setBlocks(updated);
-        triggerAutoSave(updated);
-      } else if (blocks.length > 1) {
-        e.preventDefault();
-        removeBlock(index);
+  const handleMovePage = async () => {
+    if (!moveTarget.id) return;
+    try {
+      const targetParent = moveTarget.targetParentPageId === "null" ? null : moveTarget.targetParentPageId;
+      await fetch("/api/pages", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: moveTarget.id, parentPageId: targetParent }),
+      });
+      setShowMoveModal(false);
+      window.dispatchEvent(new Event("refresh-sidebar"));
+      loadAllPages();
+    } catch {}
+  };
+
+  // Helper: Date grouping logic
+  const groupNotesByDate = (notesList: PageItem[]) => {
+    const groups: Record<string, PageItem[]> = {
+      "Letzte 30 Tage": [],
+      "Mai": [],
+      "April": [],
+      "Ältere Notizen": []
+    };
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(now.getDate() - 30);
+
+    notesList.forEach(n => {
+      const date = new Date(n.updatedAt || n.createdAt);
+      if (date >= thirtyDaysAgo) {
+        groups["Letzte 30 Tage"].push(n);
+      } else {
+        const month = date.toLocaleString("tr-TR", { month: "long" });
+        if (date.getFullYear() === now.getFullYear()) {
+          if (!groups[month]) groups[month] = [];
+          groups[month].push(n);
+        } else {
+          const yearKey = date.getFullYear().toString();
+          if (!groups[yearKey]) groups[yearKey] = [];
+          groups[yearKey].push(n);
+        }
       }
-    }
+    });
+
+    return Object.entries(groups).filter(([_, val]) => val.length > 0);
   };
 
-  const getBreadcrumbs = (pageId: string) => {
-    const path: PageItem[] = [];
-    let current = pages.find((p) => p.id === pageId);
-    while (current) {
-      path.unshift(current);
-      const parentId = current.parentPageId;
-      current = parentId ? pages.find((p) => p.id === parentId) : undefined;
-    }
-    return path;
-  };
+  // Get notes for the active view / folder
+  let notesToShow = pages;
 
-  // Views renderers (Favorites, trash, recents, archive)
-  const renderFilteredPagesView = (title: string, icon: string, filterFn: (p: PageItem) => boolean, isTrash = false) => {
-    const filtered = pages.filter(filterFn);
+  // 1. Filter out folders themselves (root pages with subpages or pages meant to act as directories)
+  // To keep it clean, any page that has parentPageId !== null is a note.
+  // And root pages (parentPageId === null) with NO subpages can also be notes, but if a folder is selected, we show notes inside that folder.
+  if (folderParam && folderParam !== "all") {
+    notesToShow = notesToShow.filter(p => p.parentPageId === folderParam && !p.deletedAt);
+  } else {
+    // folderParam === "all" or empty: show all notes (all pages where parentPageId !== null)
+    notesToShow = notesToShow.filter(p => p.parentPageId !== null && !p.deletedAt);
+  }
 
-    return (
-      <div className="max-w-3xl mx-auto py-8">
-        <div className="flex items-center space-x-3 mb-6 pb-2 border-b border-outline-variant/15 select-none">
-          <span className="material-symbols-outlined text-3xl text-primary">{icon}</span>
-          <h2 className="text-2xl font-bold font-headline-lg">{title}</h2>
-          <span className="text-xs bg-surface-container px-2 py-0.5 rounded font-bold text-secondary">{filtered.length} Öğe</span>
-        </div>
+  // 2. Filter by views
+  if (currentView === "favorites") {
+    notesToShow = notesToShow.filter(p => p.isFavorite && !p.deletedAt);
+  } else if (currentView === "recent") {
+    notesToShow = notesToShow.filter(p => p.lastOpenedAt !== null && !p.deletedAt);
+  } else if (currentView === "trash") {
+    notesToShow = pages.filter(p => p.deletedAt !== null);
+  } else if (currentView === "archive") {
+    notesToShow = notesToShow.filter(p => p.isArchived && !p.deletedAt);
+  }
 
-        {filtered.length === 0 ? (
-          <div className="text-center py-16 bg-surface-container-low rounded-3xl border border-outline-variant/15 p-6 select-none">
-            <span className="material-symbols-outlined text-4xl text-outline mb-2">info</span>
-            <p className="text-sm text-secondary font-medium">Herhangi bir öğe bulunmuyor</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {filtered.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between p-3.5 bg-surface-container-lowest border border-outline-variant/20 rounded-2xl hover:border-primary/30 transition-all shadow-xs"
-              >
-                <Link href={`/notes?id=${p.id}`} className="flex items-center space-x-2.5 min-w-0 flex-1">
-                  <span className="material-symbols-outlined text-secondary text-[18px]">{p.icon || "description"}</span>
-                  <span className="text-xs md:text-sm font-semibold truncate hover:text-primary transition-colors">{p.title}</span>
-                </Link>
-                <div className="flex items-center space-x-2 ml-4">
-                  {isTrash ? (
-                    <>
-                      <button
-                        onClick={() => handleRestorePage(p.id)}
-                        className="px-2.5 py-1 bg-primary text-on-primary text-[10px] font-bold rounded-lg shadow-sm"
-                      >
-                        Geri Yükle
-                      </button>
-                      <button
-                        onClick={() => handleHardDeletePage(p.id)}
-                        className="px-2.5 py-1 bg-surface-container hover:bg-surface-container-high text-[10px] font-bold rounded-lg text-error"
-                      >
-                        Kalıcı Sil
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => handleSoftDeletePage(p.id)}
-                      className="px-2.5 py-1 bg-surface-container hover:bg-surface-container-high text-[10px] font-bold rounded-lg text-error"
-                    >
-                      Çöpe At
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+  // 3. Search filter
+  if (searchTerm.trim()) {
+    const term = searchTerm.toLowerCase();
+    notesToShow = notesToShow.filter(p => 
+      p.title.toLowerCase().includes(term)
     );
-  };
+  }
+
+  // Grouped notes list
+  const groupedNotes = groupNotesByDate(notesToShow);
+
+  const activeFolderPage = pages.find(p => p.id === folderParam);
+  const activeFolderTitle = folderParam === "all" ? "Hepsi" : (activeFolderPage?.title || "Notlar");
 
   return (
-    <div className={`min-h-screen bg-background text-on-surface px-6 md:px-12 lg:px-20 pt-6 pb-28 md:pb-8 relative transition-all duration-350 ${isDetailsOpen ? "pr-80" : ""}`}>
-      {/* 1. View Toggles */}
-      {currentView === "favorites" && renderFilteredPagesView("Favori Defterler", "star", (p) => p.isFavorite && !p.deletedAt)}
-      {currentView === "recent" && renderFilteredPagesView("Son Kullanılanlar", "history", (p) => p.lastOpenedAt !== null && !p.deletedAt)}
-      {currentView === "trash" && renderFilteredPagesView("Çöp Kutusu", "delete", (p) => p.deletedAt !== null, true)}
-      {currentView === "archive" && renderFilteredPagesView("Arşivlenmiş Sayfalar", "archive", (p) => p.isArchived && !p.deletedAt)}
+    <div className="flex h-[calc(100vh-80px)] md:h-[calc(100vh-32px)] w-full bg-background text-on-surface overflow-hidden relative">
+      
+      {/* ---------------------------------------------------- */}
+      {/* COLUMN 1: NOTES LIST PANE (Desktop & Mobile List) */}
+      {/* ---------------------------------------------------- */}
+      <div
+        className={`w-full lg:w-80 flex flex-col border-r border-outline-variant/20 bg-surface-container-lowest h-full overflow-hidden flex-shrink-0 ${
+          activePageId ? "hidden lg:flex" : (folderParam ? "flex" : "hidden lg:flex")
+        }`}
+      >
+        <header className="px-4 pt-4 pb-2 border-b border-outline-variant/15 bg-surface-container-lowest select-none">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center space-x-2">
+              {/* Back Button (Mobile only) */}
+              <button
+                onClick={clearAllParams}
+                className="lg:hidden w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-container-high"
+              >
+                <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+              </button>
+              <h1 className="text-xl font-extrabold tracking-tight font-headline-lg">
+                {activeFolderTitle}
+              </h1>
+            </div>
+            
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => handleCreatePage(folderParam === "all" ? null : folderParam)}
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface-container text-primary"
+                title="Yeni Not Yaz"
+              >
+                <span className="material-symbols-outlined text-[20px]">edit</span>
+              </button>
+            </div>
+          </div>
 
-      {/* 2. Active Page Block Canvas Editor */}
-      {!currentView && activePageId && (
-        <div className="w-full max-w-3xl mx-auto min-h-[600px] flex flex-col justify-between py-2 animate-in fade-in duration-300">
-          <div>
-            {/* Breadcrumbs bar */}
-            <div className="flex items-center justify-between text-xs text-secondary font-semibold mb-6 flex-wrap select-none gap-y-2">
-              <div className="flex items-center space-x-1.5">
+          <p className="text-[11px] text-secondary font-medium pl-1 mb-3">
+            {notesToShow.length} Notizen
+          </p>
+
+          {/* Search bar inside header */}
+          <div className="relative mb-2.5 pl-1">
+            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-outline text-[16px]">
+              search
+            </span>
+            <input
+              type="text"
+              placeholder="Suchen"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-1.5 text-xs bg-surface-container-low border border-outline-variant/30 rounded-xl focus:outline-none focus:border-primary/50 text-on-surface font-medium"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[14px] text-outline hover:text-on-surface"
+              >
+                <span className="material-symbols-outlined text-[14px]">close</span>
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* Notes list grouped by Date */}
+        <div className="flex-1 overflow-y-auto p-2 bg-surface-container-low/40 space-y-4">
+          {groupedNotes.length === 0 ? (
+            <div className="p-12 text-center text-secondary text-xs italic select-none">
+              Not Defteri Boş
+            </div>
+          ) : (
+            groupedNotes.map(([dateGroup, items]) => (
+              <div key={dateGroup} className="space-y-1">
+                <h3 className="px-2.5 text-[9px] font-bold text-outline uppercase tracking-wider font-label-caps opacity-75 select-none">
+                  {dateGroup}
+                </h3>
+                <div className="space-y-1">
+                  {items.map((item) => {
+                    const isSelected = activePageId === item.id;
+                    const cleanDate = new Date(item.updatedAt || item.createdAt).toLocaleDateString("tr-TR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "2-digit",
+                    });
+                    
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => updateParams({ id: item.id })}
+                        className={`block p-3.5 rounded-xl cursor-pointer border relative overflow-hidden transition-all select-none group ${
+                          isSelected
+                            ? "bg-primary text-on-primary border-primary shadow-xs"
+                            : "bg-surface-container-lowest border-outline-variant/20 hover:border-primary/20 shadow-2xs text-on-surface"
+                        }`}
+                      >
+                        <h4 className="text-xs font-bold truncate mb-0.5 leading-snug">
+                          {item.title || "Başlıksız Not"}
+                        </h4>
+                        
+                        <div className="flex items-center space-x-2 text-[10px]">
+                          <span className={`font-semibold ${isSelected ? "text-on-primary/80" : "text-secondary"}`}>
+                            {cleanDate}
+                          </span>
+                          <span className={`truncate ${isSelected ? "text-on-primary/60" : "text-outline/70"}`}>
+                            {item.isFavorite ? "★ " : ""}Not Defteri
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Mobile footer for list view */}
+        <footer className="lg:hidden px-4 py-2 border-t border-outline-variant/20 bg-surface-container-lowest flex items-center justify-between flex-shrink-0">
+          <span className="text-[10px] text-secondary font-semibold">
+            {notesToShow.length} Notizen
+          </span>
+          <button
+            onClick={() => handleCreatePage(folderParam === "all" ? null : folderParam)}
+            className="w-9 h-9 bg-primary text-on-primary rounded-full flex items-center justify-center shadow-md shadow-primary/20"
+            title="Yeni Not Yaz"
+          >
+            <span className="material-symbols-outlined text-[18px]">edit</span>
+          </button>
+        </footer>
+      </div>
+
+      {/* ---------------------------------------------------- */}
+      {/* COLUMN 2: NOTE EDITOR CANVAS (Desktop & Mobile Editor) */}
+      {/* ---------------------------------------------------- */}
+      <div
+        className={`flex flex-col flex-1 bg-surface-container-lowest h-full overflow-hidden ${
+          activePageId ? "flex" : "hidden lg:flex"
+        }`}
+      >
+        {activePageId ? (
+          <>
+            {/* Apple Notes Style Toolbar */}
+            <header className="px-4 py-2.5 border-b border-outline-variant/15 bg-surface-container-lowest flex items-center justify-between flex-shrink-0 select-none">
+              <div className="flex items-center space-x-2">
+                {/* Back button (Mobile only) */}
                 <button
-                  onClick={() => router.push("/notes")}
-                  className="hover:text-primary transition-colors flex items-center space-x-1"
+                  onClick={() => updateParams({ id: null })}
+                  className="lg:hidden w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-container-high"
                 >
-                  <span className="material-symbols-outlined text-[15px]">folder</span>
-                  <span>Not Defterleri</span>
+                  <span className="material-symbols-outlined text-[20px]">chevron_left</span>
                 </button>
-                {getBreadcrumbs(activePageId).map((p, idx, arr) => (
-                  <span key={p.id} className="flex items-center space-x-1.5">
-                    <span className="text-outline-variant/60 font-normal">/</span>
-                    <button
-                      onClick={() => router.push(`/notes?id=${p.id}`)}
-                      className={`hover:text-primary transition-colors flex items-center space-x-1 ${
-                        idx === arr.length - 1 ? "text-on-surface font-bold" : ""
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[15px]">{p.icon || "description"}</span>
-                      <span>{p.title}</span>
-                    </button>
-                  </span>
-                ))}
+
+                <button
+                  onClick={() => handleCreatePage(folderParam === "all" ? null : folderParam)}
+                  className="w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-secondary"
+                  title="Yeni Not"
+                >
+                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                </button>
               </div>
 
-              {/* Actions panel */}
-              <div className="flex items-center space-x-2">
-                <span className="text-[10px] text-outline select-none mr-2">
+              {/* Editing shortcut icons */}
+              <div className="flex items-center space-x-1">
+                <button
+                  onClick={() => addBlock("heading")}
+                  className="w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-secondary font-bold text-xs"
+                  title="Başlık Ekle (Aa)"
+                >
+                  <span className="material-symbols-outlined text-[18px]">text_fields</span>
+                </button>
+                <button
+                  onClick={() => addBlock("checklist")}
+                  className="w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-secondary"
+                  title="Görev Ekle"
+                >
+                  <span className="material-symbols-outlined text-[18px]">check_box</span>
+                </button>
+                <button
+                  onClick={() => addBlock("table")}
+                  className="w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-secondary"
+                  title="Tablo Ekle"
+                >
+                  <span className="material-symbols-outlined text-[18px]">table</span>
+                </button>
+                <button
+                  onClick={() => addBlock("bullet")}
+                  className="w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-secondary"
+                  title="Noktalı Liste"
+                >
+                  <span className="material-symbols-outlined text-[18px]">format_list_bulleted</span>
+                </button>
+
+                <div className="w-[1px] h-5 bg-outline-variant/20 mx-1.5" />
+
+                <button
+                  onClick={() => {
+                    if (activePage) {
+                      handleCreatePage(activePageId); // Create subpage
+                    }
+                  }}
+                  className="w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-secondary"
+                  title="Alt Sayfa Bağlantısı"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add_link</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (activePage) {
+                      fetch(`/api/pages`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ id: activePage.id, isFavorite: !activePage.isFavorite }),
+                      }).then(() => {
+                        window.dispatchEvent(new Event("refresh-sidebar"));
+                        loadAllPages();
+                      });
+                    }
+                  }}
+                  className={`w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center ${activePage?.isFavorite ? "text-amber-500" : "text-secondary"}`}
+                  title="Favorilere Ekle"
+                >
+                  <span className="material-symbols-outlined text-[18px] fill-current">star</span>
+                </button>
+                <button
+                  onClick={() => activePage && handleSoftDeletePage(activePage.id)}
+                  className="w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-error"
+                  title="Sil"
+                >
+                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+                
+                <div className="w-[1px] h-5 bg-outline-variant/20 mx-1.5" />
+                
+                <button
+                  onClick={() => setIsDetailsOpen(!isDetailsOpen)}
+                  className="w-9 h-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-secondary"
+                  title="Bilgiler"
+                >
+                  <span className="material-symbols-outlined text-[18px]">info</span>
+                </button>
+              </div>
+            </header>
+
+            {/* Note Canvas body editor */}
+            <div className="flex-1 overflow-y-auto px-6 md:px-10 py-6">
+              {/* Header metadata row */}
+              <div className="flex items-center justify-between text-[10px] text-outline font-semibold mb-4 select-none">
+                <span>
+                  {activePage?.createdAt ? new Date(activePage.createdAt).toLocaleString("tr-TR") : ""}
+                </span>
+                <span>
                   {saveStatus === "saving" && "☁️ Kaydediliyor..."}
                   {saveStatus === "saved" && "✓ Kaydedildi"}
                   {saveStatus === "error" && "⚠️ Kaydedilemedi"}
                 </span>
-
-                {/* Move page button */}
-                <button
-                  onClick={() => {
-                    setMoveTarget({ id: activePageId, targetParentPageId: activePage?.parentPageId || "null" });
-                    setShowMoveModal(true);
-                  }}
-                  className="w-7 h-7 rounded-lg hover:bg-surface-container flex items-center justify-center border border-outline-variant/20"
-                  title="Not Defterini Taşı"
-                >
-                  <span className="material-symbols-outlined text-[17px]">drive_file_move</span>
-                </button>
-
-                <button
-                  onClick={() => setIsDetailsOpen(!isDetailsOpen)}
-                  className="w-7 h-7 rounded-lg hover:bg-surface-container flex items-center justify-center border border-outline-variant/20"
-                  title="Detaylar"
-                >
-                  <span className="material-symbols-outlined text-[17px]">info</span>
-                </button>
               </div>
-            </div>
 
-            {/* Page Cover & Icon Header */}
-            <div className="group relative mb-5 flex items-center space-x-3.5 pb-5 border-b border-outline-variant/15">
-              <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center select-none text-primary">
-                <span className="material-symbols-outlined text-2xl">{activePage?.icon || "description"}</span>
+              {/* Title input */}
+              <div className="mb-6 pb-2 border-b border-outline-variant/15">
+                <input
+                  type="text"
+                  value={activePage?.title || ""}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  className="text-2xl md:text-3xl font-extrabold font-headline-lg bg-transparent text-on-surface focus:outline-none w-full tracking-tight"
+                  placeholder="Not Başlığı"
+                />
               </div>
-              <input
-                type="text"
-                value={activePage?.title || ""}
-                onChange={(e) => handleTitleChange(e.target.value)}
-                className="text-2xl md:text-3xl font-bold font-headline-lg bg-transparent text-on-surface focus:outline-none w-full tracking-tight"
-                placeholder="Başlıksız Sayfa"
-              />
-            </div>
 
-            {/* Subpages grid in-canvas */}
-            <div className="mb-6 mt-2">
-              <div className="flex items-center justify-between mb-3 pb-1 border-b border-outline-variant/15 select-none">
-                <h3 className="text-[10px] font-bold uppercase tracking-wider text-secondary font-label-caps flex items-center">
-                  <span className="material-symbols-outlined text-[14px] mr-1 text-primary">folder_open</span>
-                  İç İçe Sayfalar
-                </h3>
-                <button
-                  onClick={() => handleCreatePage(activePageId)}
-                  className="text-[10px] font-bold text-primary hover:underline flex items-center space-x-0.5"
-                >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
-                  <span>Alt Defter Ekle</span>
-                </button>
-              </div>
-              {pages.filter((p) => p.parentPageId === activePageId && !p.deletedAt).length === 0 ? (
-                <p className="text-[10px] text-outline italic select-none">Bu not defterinin altında başka sayfa bulunmuyor.</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                  {pages
-                    .filter((p) => p.parentPageId === activePageId && !p.deletedAt)
-                    .map((subP) => (
-                      <div
-                        key={subP.id}
-                        className="flex items-center justify-between px-3 py-2 bg-surface-container-low/40 hover:bg-surface-container-low rounded-xl border border-outline-variant/15 text-left text-xs font-semibold text-on-surface transition-all group"
-                      >
-                        <Link href={`/notes?id=${subP.id}`} className="flex items-center space-x-2 truncate flex-1 min-w-0">
-                          <span className="material-symbols-outlined text-[16px] text-secondary group-hover:text-primary transition-colors">
-                            {subP.icon || "article"}
-                          </span>
-                          <span className="truncate flex-1">{subP.title}</span>
-                        </Link>
-                        <button
-                          onClick={() => handleDuplicatePage(subP.id)}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-outline hover:text-primary transition-all"
-                          title="Kopyala"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                        </button>
-                      </div>
-                    ))}
+              {/* Dynamic Blocks editor list */}
+              {loading ? (
+                <div className="space-y-4 py-4">
+                  <div className="h-6 bg-surface-container-low animate-pulse rounded-lg w-3/4" />
+                  <div className="h-4 bg-surface-container-low animate-pulse rounded-lg w-full" />
+                  <div className="h-4 bg-surface-container-low animate-pulse rounded-lg w-5/6" />
                 </div>
-              )}
-            </div>
-
-            {/* Block list */}
-            {loading ? (
-              <div className="space-y-4 py-8">
-                <div className="h-8 bg-surface-container-low animate-pulse rounded-lg w-3/4" />
-                <div className="h-5 bg-surface-container-low animate-pulse rounded-lg w-full" />
-                <div className="h-5 bg-surface-container-low animate-pulse rounded-lg w-5/6" />
-              </div>
-            ) : (
-              <div className="space-y-3 relative">
-                {blocks.map((block, index) => {
-                  const isHighlighted = block.id === highlightTaskId;
-
-                  return (
-                    <div
-                      key={block.id}
-                      className={`group flex items-start space-x-2.5 p-1.5 rounded-xl transition-all relative ${
-                        isHighlighted ? "bg-primary/5 ring-1 ring-primary/30" : "hover:bg-surface-container-low/30"
-                      }`}
-                    >
-                      {/* Drag Handle, Convert & Delete */}
-                      <div className="opacity-0 group-hover:opacity-100 flex items-center space-x-1 pt-1.5 transition-opacity text-outline select-none">
-                        <span className="material-symbols-outlined text-[16px] cursor-grab">drag_indicator</span>
-                        
-                        {/* Convert block text to subpage */}
-                        {block.type !== "subpage" && block.type !== "divider" && (
+              ) : (
+                <div className="space-y-3 relative pb-20">
+                  {blocks.map((block, index) => {
+                    const isHighlighted = block.id === highlightTaskId;
+                    return (
+                      <div
+                        key={block.id}
+                        className={`group flex items-start space-x-2.5 p-1 rounded-xl transition-all relative ${
+                          isHighlighted ? "bg-primary/5 ring-1 ring-primary/20" : "hover:bg-surface-container-low/20"
+                        }`}
+                      >
+                        {/* Drag Handle & Delete (hover tools) */}
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center space-x-1 pt-1.5 transition-opacity text-outline select-none">
+                          <span className="material-symbols-outlined text-[15px] cursor-grab">drag_indicator</span>
+                          {block.type !== "subpage" && block.type !== "divider" && (
+                            <button
+                              onClick={() => handleConvertToSubpage(index, block)}
+                              className="text-primary hover:scale-115 transition-transform"
+                              title="Detay Klasörüne Dönüştür"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">swap_horizontal_circle</span>
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleConvertToSubpage(index, block)}
-                            className="text-primary hover:scale-115 transition-transform"
-                            title="Metni Alt Deftere Dönüştür"
+                            onClick={() => removeBlock(index)}
+                            className="text-error hover:scale-110 transition-transform"
+                            title="Sil"
                           >
-                            <span className="material-symbols-outlined text-[15px]">swap_horizontal_circle</span>
+                            <span className="material-symbols-outlined text-[14px]">delete</span>
                           </button>
-                        )}
+                        </div>
 
-                        <button
-                          onClick={() => removeBlock(index)}
-                          className="text-error hover:scale-110 transition-transform"
-                          title="Sil"
-                        >
-                          <span className="material-symbols-outlined text-[15px]">delete</span>
-                        </button>
-                      </div>
+                        <div className="flex-1 min-w-0">
+                          {/* Heading */}
+                          {block.type === "heading" && (
+                            <input
+                              type="text"
+                              value={block.content}
+                              onChange={(e) => updateBlock(index, e.target.value)}
+                              onKeyDown={(e) => handleKeyDown(e, index, block)}
+                              placeholder="Başlık..."
+                              className="w-full text-base font-extrabold bg-transparent text-on-surface focus:outline-none border-b border-transparent focus:border-primary/20 py-1"
+                            />
+                          )}
 
-                      <div className="flex-1 min-w-0">
-                        {/* Heading */}
-                        {block.type === "heading" && (
-                          <input
-                            type="text"
-                            value={block.content}
-                            onChange={(e) => updateBlock(index, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                addBlock("paragraph", index);
-                              }
-                              handleKeyDown(e, index, block);
-                            }}
-                            placeholder="Başlık..."
-                            className="w-full text-lg md:text-xl font-bold font-headline-lg bg-transparent text-on-surface focus:outline-none border-b border-transparent focus:border-primary/30 py-1"
-                          />
-                        )}
+                          {/* Paragraph */}
+                          {block.type === "paragraph" && (
+                            <textarea
+                              ref={(el) => {
+                                if (el) {
+                                  el.style.height = "auto";
+                                  el.style.height = `${el.scrollHeight}px`;
+                                }
+                              }}
+                              rows={1}
+                              value={block.content}
+                              onChange={(e) => updateBlock(index, e.target.value)}
+                              onKeyDown={(e) => handleKeyDown(e, index, block)}
+                              placeholder="Yazmaya başlayın..."
+                              className="w-full text-xs md:text-sm bg-transparent text-on-surface focus:outline-none py-1 resize-none leading-relaxed"
+                            />
+                          )}
 
-                        {/* Paragraph */}
-                        {block.type === "paragraph" && (
-                          <textarea
-                            ref={(el) => {
-                              if (el) {
-                                el.style.height = "auto";
-                                el.style.height = `${el.scrollHeight}px`;
-                              }
-                            }}
-                            rows={1}
-                            value={block.content}
-                            onChange={(e) => {
-                              updateBlock(index, e.target.value);
-                              e.target.style.height = "auto";
-                              e.target.style.height = `${e.target.scrollHeight}px`;
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Backspace" && block.content === "" && blocks.length > 1) {
-                                e.preventDefault();
-                                removeBlock(index);
-                              }
-                            }}
-                            placeholder="Metin yazın veya / ile komut girin..."
-                            className="w-full text-xs md:text-sm leading-relaxed bg-transparent text-on-surface focus:outline-none resize-none py-1"
-                          />
-                        )}
-
-                        {/* Checklist Task Block */}
-                        {block.type === "checklist" && (
-                          <div className="w-full">
-                            <div className="flex items-center space-x-3 py-1">
-                              <input
-                                type="checkbox"
-                                checked={block.checked}
-                                onChange={(e) => {
-                                  updateBlock(index, block.content, { checked: e.target.checked });
-                                }}
-                                className="w-4 h-4 accent-primary rounded cursor-pointer"
-                              />
+                          {/* Checklist */}
+                          {block.type === "checklist" && (
+                            <div className="flex items-center space-x-2.5 py-1">
+                              <button
+                                type="button"
+                                onClick={() => updateBlock(index, block.content, { checked: !block.checked })}
+                                className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+                                  block.checked
+                                    ? "bg-primary border-primary text-on-primary"
+                                    : "border-outline-variant/80 hover:border-primary text-transparent"
+                                }`}
+                              >
+                                <span className="material-symbols-outlined text-[13px] font-black">check</span>
+                              </button>
                               <input
                                 type="text"
                                 value={block.content}
                                 onChange={(e) => updateBlock(index, e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    addBlock("checklist", index);
-                                  }
-                                  handleKeyDown(e, index, block);
-                                }}
+                                onKeyDown={(e) => handleKeyDown(e, index, block)}
                                 placeholder="Yapılacak iş..."
-                                className={`w-full text-xs md:text-sm bg-transparent focus:outline-none py-0.5 ${
-                                  block.checked ? "line-through text-outline font-normal" : "text-on-surface"
+                                className={`w-full text-xs md:text-sm bg-transparent focus:outline-none ${
+                                  block.checked ? "line-through text-outline/70 font-medium" : "text-on-surface"
                                 }`}
                               />
                             </div>
-                            
-                            {/* Task properties box inside editor block */}
-                            <div className="pl-7 flex items-center space-x-2 flex-wrap gap-y-1 select-none">
-                              <select
-                                value={block.properties?.priority || "NORMAL"}
-                                onChange={(e) => updateBlock(index, block.content, { priority: e.target.value })}
-                                className="text-[9px] font-bold bg-surface-container-low px-1.5 py-0.5 rounded border border-outline-variant/20 focus:outline-none text-secondary"
-                              >
-                                <option value="LOW">LOW</option>
-                                <option value="NORMAL">NORMAL</option>
-                                <option value="HIGH">HIGH</option>
-                                <option value="URGENT">URGENT</option>
-                              </select>
-                              <input
-                                type="date"
-                                value={block.properties?.dueDate || ""}
-                                onChange={(e) => updateBlock(index, block.content, { dueDate: e.target.value })}
-                                className="text-[9px] font-bold bg-surface-container-low px-1.5 py-0.5 rounded border border-outline-variant/20 focus:outline-none text-secondary"
-                              />
-                              <select
-                                value={block.properties?.projectId || ""}
-                                onChange={(e) => updateBlock(index, block.content, { projectId: e.target.value || null })}
-                                className="text-[9px] font-bold bg-surface-container-low px-1.5 py-0.5 rounded border border-outline-variant/20 focus:outline-none text-secondary"
-                              >
-                                <option value="">Projesiz</option>
-                                {projects.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
+                          )}
 
-                        {/* Bullet list */}
-                        {block.type === "bullet" && (
-                          <div className="flex items-start space-x-2 py-1">
-                            <span className="text-primary font-bold select-none pt-0.5">•</span>
-                            <input
-                              type="text"
-                              value={block.content}
-                              onChange={(e) => updateBlock(index, e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  addBlock("bullet", index);
-                                }
-                                handleKeyDown(e, index, block);
-                              }}
-                              placeholder="Liste öğesi..."
-                              className="w-full text-xs md:text-sm bg-transparent text-on-surface focus:outline-none py-0.5"
-                            />
-                          </div>
-                        )}
-
-                        {/* Toggle list */}
-                        {block.type === "toggle" && (
-                          <div className="w-full py-1">
-                            <div className="flex items-center space-x-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  updateBlock(index, block.content, { checked: !block.checked });
-                                }}
-                                className="w-5 h-5 flex items-center justify-center text-outline hover:text-on-surface transition-colors"
-                              >
-                                <span className={`material-symbols-outlined text-[18px] transition-transform duration-100 ${block.checked ? "rotate-90" : "rotate-0"}`}>
-                                  chevron_right
-                                </span>
-                              </button>
+                          {/* Bullet List */}
+                          {block.type === "bullet" && (
+                            <div className="flex items-start space-x-2 py-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-outline-variant/80 mt-2 flex-shrink-0" />
                               <input
                                 type="text"
                                 value={block.content}
                                 onChange={(e) => updateBlock(index, e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    addBlock("paragraph", index);
-                                  }
-                                  handleKeyDown(e, index, block);
-                                }}
-                                placeholder="Açılır liste..."
-                                className="w-full font-semibold text-xs md:text-sm bg-transparent text-on-surface focus:outline-none py-0.5"
+                                onKeyDown={(e) => handleKeyDown(e, index, block)}
+                                placeholder="Liste öğesi..."
+                                className="w-full text-xs md:text-sm bg-transparent text-on-surface focus:outline-none"
                               />
                             </div>
-                            {block.checked && (
-                              <div className="pl-7 mt-1.5 border-l border-outline-variant/30 ml-2.5">
-                                <textarea
-                                  rows={3}
-                                  value={block.toggleBody || ""}
-                                  onChange={(e) => {
-                                    const updated = [...blocks];
-                                    updated[index].toggleBody = e.target.value;
-                                    setBlocks(updated);
-                                    triggerAutoSave(updated);
-                                  }}
-                                  placeholder="Detaylı notlarınızı buraya yazın..."
-                                  className="w-full text-xs md:text-sm leading-relaxed bg-transparent text-secondary focus:outline-none resize-none"
+                          )}
+
+                          {/* Toggle list */}
+                          {block.type === "toggle" && (
+                            <div className="w-full py-1">
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => updateBlock(index, block.content, { checked: !block.checked })}
+                                  className="w-5 h-5 flex items-center justify-center text-outline hover:text-on-surface transition-colors"
+                                >
+                                  <span className={`material-symbols-outlined text-[18px] transition-transform duration-100 ${block.checked ? "rotate-90" : "rotate-0"}`}>
+                                    chevron_right
+                                  </span>
+                                </button>
+                                <input
+                                  type="text"
+                                  value={block.content}
+                                  onChange={(e) => updateBlock(index, e.target.value)}
+                                  onKeyDown={(e) => handleKeyDown(e, index, block)}
+                                  placeholder="Açılır liste..."
+                                  className="w-full font-semibold text-xs bg-transparent text-on-surface focus:outline-none py-0.5"
                                 />
                               </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Code block */}
-                        {block.type === "code" && (
-                          <div className="w-full py-2 space-y-1.5">
-                            <div className="flex items-center justify-between px-2.5 py-1 bg-surface-container rounded-t-xl select-none">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-outline font-label-caps flex items-center">
-                                <span className="material-symbols-outlined text-[15px] mr-1">code</span>Kod Bloğu
-                              </span>
-                              <select
-                                value={block.properties?.language || "javascript"}
-                                onChange={(e) => updateBlock(index, block.content, { language: e.target.value })}
-                                className="text-[9px] font-bold bg-surface-container-low px-1.5 py-0.5 rounded border border-outline-variant/20 focus:outline-none text-secondary"
-                              >
-                                <option value="javascript">JavaScript</option>
-                                <option value="typescript">TypeScript</option>
-                                <option value="python">Python</option>
-                                <option value="css">CSS</option>
-                                <option value="html">HTML</option>
-                              </select>
+                              {block.checked && (
+                                <div className="pl-7 mt-1 border-l border-outline-variant/20 ml-2">
+                                  <textarea
+                                    rows={3}
+                                    value={block.toggleBody || ""}
+                                    onChange={(e) => {
+                                      const updated = [...blocks];
+                                      updated[index].toggleBody = e.target.value;
+                                      setBlocks(updated);
+                                      triggerAutoSave(updated);
+                                    }}
+                                    placeholder="Detaylı notlarınızı buraya yazın..."
+                                    className="w-full text-xs leading-relaxed bg-transparent text-secondary focus:outline-none resize-none"
+                                  />
+                                </div>
+                              )}
                             </div>
-                            <textarea
-                              rows={5}
-                              value={block.content}
-                              onChange={(e) => updateBlock(index, e.target.value)}
-                              placeholder="Kodlarınızı buraya yazın..."
-                              className="w-full font-mono text-xs p-3 bg-surface-container-lowest border border-outline-variant/25 rounded-b-xl focus:outline-none resize-none"
-                            />
-                          </div>
-                        )}
+                          )}
 
-                        {/* Table Block */}
-                        {block.type === "table" && (
-                          <div className="w-full py-2 space-y-2 overflow-x-auto">
-                            <div className="flex items-center space-x-2 select-none mb-1">
-                              <button
-                                onClick={() => {
-                                  const rows = block.properties?.rows || [["", ""], ["", ""]];
-                                  const updatedRows = [...rows, Array(rows[0].length).fill("")];
-                                  updateBlock(index, block.content, { rows: updatedRows });
-                                }}
-                                className="px-2 py-1 bg-surface-container hover:bg-surface-container-high text-[10px] font-bold rounded-lg text-secondary"
-                              >
-                                + Satır Ekle
-                              </button>
-                              <button
-                                onClick={() => {
-                                  const rows = block.properties?.rows || [["", ""], ["", ""]];
-                                  const updatedRows = rows.map((r: any) => [...r, ""]);
-                                  updateBlock(index, block.content, { rows: updatedRows });
-                                }}
-                                className="px-2 py-1 bg-surface-container hover:bg-surface-container-high text-[10px] font-bold rounded-lg text-secondary"
-                              >
-                                + Sütun Ekle
-                              </button>
+                          {/* Code block */}
+                          {block.type === "code" && (
+                            <div className="w-full py-2 space-y-1">
+                              <div className="flex items-center justify-between px-2.5 py-1 bg-surface-container rounded-t-xl select-none">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-outline font-label-caps flex items-center">
+                                  <span className="material-symbols-outlined text-[15px] mr-1">code</span>Kod Bloğu
+                                </span>
+                              </div>
+                              <textarea
+                                rows={4}
+                                value={block.content}
+                                onChange={(e) => updateBlock(index, e.target.value)}
+                                placeholder="Kodlarınızı buraya yazın..."
+                                className="w-full font-mono text-xs p-3 bg-surface-container-low border border-outline-variant/25 rounded-b-xl focus:outline-none resize-none"
+                              />
                             </div>
-                            <table className="border-collapse border border-outline-variant/30 text-xs md:text-sm w-full bg-surface-container-lowest rounded-xl overflow-hidden">
-                              <tbody>
-                                {(block.properties?.rows || [["", ""], ["", ""]]).map((row: string[], rIdx: number) => (
-                                  <tr key={rIdx}>
-                                    {row.map((cell: string, cIdx: number) => (
-                                      <td key={cIdx} className="border border-outline-variant/20 p-2">
-                                        <input
-                                          type="text"
-                                          value={cell}
-                                          onChange={(e) => {
-                                            const updatedRows = [...(block.properties?.rows || [])];
-                                            updatedRows[rIdx] = [...updatedRows[rIdx]];
-                                            updatedRows[rIdx][cIdx] = e.target.value;
-                                            updateBlock(index, block.content, { rows: updatedRows });
-                                          }}
-                                          className="w-full bg-transparent focus:outline-none"
-                                          placeholder="Hücre..."
-                                        />
-                                      </td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
+                          )}
 
-                        {/* Quote Block */}
-                        {block.type === "quote" && (
-                          <div className="pl-4 border-l-4 border-primary/50 py-1 my-1">
-                            <input
-                              type="text"
-                              value={block.content}
-                              onChange={(e) => updateBlock(index, e.target.value)}
-                              onKeyDown={(e) => handleKeyDown(e, index, block)}
-                              placeholder="Alıntı..."
-                              className="w-full italic text-xs md:text-sm bg-transparent text-secondary focus:outline-none"
-                            />
-                          </div>
-                        )}
+                          {/* Table Block */}
+                          {block.type === "table" && (
+                            <div className="w-full py-2 space-y-2 overflow-x-auto">
+                              <div className="flex items-center space-x-2 select-none mb-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rows = block.properties?.rows || [["", ""], ["", ""]];
+                                    const updatedRows = [...rows, Array(rows[0].length).fill("")];
+                                    updateBlock(index, block.content, { rows: updatedRows });
+                                  }}
+                                  className="px-2 py-1 bg-surface-container hover:bg-surface-container-high text-[9px] font-bold rounded-lg text-secondary"
+                                >
+                                  + Satır Ekle
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rows = block.properties?.rows || [["", ""], ["", ""]];
+                                    const updatedRows = rows.map((r: any) => [...r, ""]);
+                                    updateBlock(index, block.content, { rows: updatedRows });
+                                  }}
+                                  className="px-2 py-1 bg-surface-container hover:bg-surface-container-high text-[9px] font-bold rounded-lg text-secondary"
+                                >
+                                  + Sütun Ekle
+                                </button>
+                              </div>
+                              <table className="border-collapse border border-outline-variant/30 text-xs w-full bg-surface-container-lowest rounded-xl overflow-hidden">
+                                <tbody>
+                                  {(block.properties?.rows || [["", ""], ["", ""]]).map((row: string[], rIdx: number) => (
+                                    <tr key={rIdx}>
+                                      {row.map((cell: string, cIdx: number) => (
+                                        <td key={cIdx} className="border border-outline-variant/20 p-2">
+                                          <input
+                                            type="text"
+                                            value={cell}
+                                            onChange={(e) => {
+                                              const updatedRows = [...(block.properties?.rows || [])];
+                                              updatedRows[rIdx] = [...updatedRows[rIdx]];
+                                              updatedRows[rIdx][cIdx] = e.target.value;
+                                              updateBlock(index, block.content, { rows: updatedRows });
+                                            }}
+                                            className="w-full bg-transparent focus:outline-none"
+                                            placeholder="Hücre..."
+                                          />
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
 
-                        {/* Callout Box */}
-                        {block.type === "callout" && (
-                          <div className={`p-3.5 rounded-2xl border flex items-start space-x-3 my-1 bg-surface-container-low/50 border-outline-variant/20`}>
-                            <span className="material-symbols-outlined text-[20px] text-primary select-none pt-0.5">info</span>
-                            <input
-                              type="text"
-                              value={block.content}
-                              onChange={(e) => updateBlock(index, e.target.value)}
-                              onKeyDown={(e) => handleKeyDown(e, index, block)}
-                              placeholder="Önemli bilgi..."
-                              className="w-full text-xs bg-transparent focus:outline-none text-on-surface"
-                            />
-                          </div>
-                        )}
+                          {/* Quote Block */}
+                          {block.type === "quote" && (
+                            <div className="pl-4 border-l-4 border-primary/50 py-1 my-1">
+                              <input
+                                type="text"
+                                value={block.content}
+                                onChange={(e) => updateBlock(index, e.target.value)}
+                                onKeyDown={(e) => handleKeyDown(e, index, block)}
+                                placeholder="Alıntı..."
+                                className="w-full italic text-xs bg-transparent text-secondary focus:outline-none"
+                              />
+                            </div>
+                          )}
 
-                        {/* Divider */}
-                        {block.type === "divider" && (
-                          <div className="py-2.5 select-none">
-                            <hr className="border-t border-outline-variant/35" />
-                          </div>
-                        )}
+                          {/* Callout Box */}
+                          {block.type === "callout" && (
+                            <div className="p-3.5 rounded-2xl border flex items-start space-x-3 my-1 bg-surface-container-low/50 border-outline-variant/20">
+                              <span className="material-symbols-outlined text-[20px] text-primary select-none pt-0.5">info</span>
+                              <input
+                                type="text"
+                                value={block.content}
+                                onChange={(e) => updateBlock(index, e.target.value)}
+                                onKeyDown={(e) => handleKeyDown(e, index, block)}
+                                placeholder="Önemli bilgi..."
+                                className="w-full text-xs bg-transparent focus:outline-none text-on-surface"
+                              />
+                            </div>
+                          )}
 
-                        {/* Inline subpage card block link (Notion style) */}
-                        {block.type === "subpage" && (
-                          <div className="flex items-center justify-between py-1.5 px-3 bg-surface-container-low hover:bg-surface-container border border-outline-variant/20 rounded-xl select-none w-fit cursor-pointer group/sublink transition-colors">
-                            <Link
-                              href={`/notes?id=${block.properties?.pageId}`}
-                              className="flex items-center space-x-2 text-xs font-bold text-on-surface hover:text-primary transition-colors"
-                            >
-                              <span className="material-symbols-outlined text-[16px] text-secondary">article</span>
-                              <span>{block.content || "Başlıksız Alt Defter"}</span>
-                            </Link>
-                          </div>
-                        )}
+                          {/* Divider */}
+                          {block.type === "divider" && (
+                            <div className="py-2 select-none">
+                              <hr className="border-t border-outline-variant/20" />
+                            </div>
+                          )}
+
+                          {/* Inline subpage card block link */}
+                          {block.type === "subpage" && (
+                            <div className="flex items-center justify-between py-1.5 px-3 bg-surface-container-low hover:bg-surface-container border border-outline-variant/20 rounded-xl select-none w-fit cursor-pointer group/sublink transition-colors">
+                              <Link
+                                href={`/notes?id=${block.properties?.pageId}`}
+                                className="flex items-center space-x-2 text-xs font-bold text-on-surface hover:text-primary transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[16px] text-secondary">article</span>
+                                <span>{block.content || "Başlıksız Alt Defter"}</span>
+                              </Link>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
 
-                {/* Slash Commands Dropdown */}
-                {showSlashMenu && (
-                  <div className="absolute left-8 z-30 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl shadow-2xl p-2.5 w-64 animate-in fade-in zoom-in-95 duration-150 select-none">
-                    <div className="text-[10px] font-bold font-label-caps uppercase text-outline px-2.5 py-1 border-b border-surface-container">
-                      Blok Türü Ekle
-                    </div>
-                    {[
-                      { label: "Başlık Bloğu", type: "heading" as const, icon: "title", color: "text-primary" },
-                      { label: "Paragraf Metni", type: "paragraph" as const, icon: "segment", color: "text-secondary" },
-                      { label: "Yapılacaklar Listesi", type: "checklist" as const, icon: "check_box", color: "text-emerald-600" },
-                      { label: "Noktalı Liste", type: "bullet" as const, icon: "format_list_bulleted", color: "text-blue-500" },
-                      { label: "Açılır Liste (Toggle)", type: "toggle" as const, icon: "arrow_drop_down_circle", color: "text-amber-600" },
-                      { label: "Alıntı (Quote)", type: "quote" as const, icon: "format_quote", color: "text-purple-600" },
-                      { label: "Bilgi Kutusu (Callout)", type: "callout" as const, icon: "info", color: "text-sky-600" },
-                      { label: "Kod Bloğu", type: "code" as const, icon: "code", color: "text-rose-600" },
-                      { label: "Tablo", type: "table" as const, icon: "table", color: "text-indigo-600" },
-                      { label: "Yatay Çizgi (Divider)", type: "divider" as const, icon: "horizontal_rule", color: "text-outline" },
-                    ].map((item) => (
-                      <button
-                        key={item.type}
-                        onClick={() => {
-                          if (activeBlockIndex !== null) {
-                            const updated = [...blocks];
-                            updated[activeBlockIndex].content = updated[activeBlockIndex].content.replace(/\/$/, "");
-                            updated[activeBlockIndex].type = item.type;
-                            if (item.type === "toggle") {
-                              updated[activeBlockIndex].toggleBody = "";
-                              updated[activeBlockIndex].checked = false;
-                            } else if (item.type === "table") {
-                              updated[activeBlockIndex].properties = { rows: [["", ""], ["", ""]] };
-                            } else if (item.type === "code") {
-                              updated[activeBlockIndex].properties = { language: "javascript" };
-                            } else if (item.type === "callout") {
-                              updated[activeBlockIndex].properties = { type: "info" };
+                  {/* Slash Commands Dropdown Menu */}
+                  {showSlashMenu && (
+                    <div className="absolute left-8 z-30 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl shadow-2xl p-2.5 w-64 animate-in fade-in zoom-in-95 duration-150 select-none">
+                      <div className="text-[10px] font-bold font-label-caps uppercase text-outline px-2.5 py-1 border-b border-surface-container">
+                        Blok Türü Ekle
+                      </div>
+                      {[
+                        { label: "Başlık Bloğu", type: "heading" as const, icon: "title", color: "text-primary" },
+                        { label: "Paragraf Metni", type: "paragraph" as const, icon: "segment", color: "text-secondary" },
+                        { label: "Yapılacaklar Listesi", type: "checklist" as const, icon: "check_box", color: "text-emerald-600" },
+                        { label: "Noktalı Liste", type: "bullet" as const, icon: "format_list_bulleted", color: "text-blue-500" },
+                        { label: "Açılır Liste (Toggle)", type: "toggle" as const, icon: "arrow_drop_down_circle", color: "text-amber-600" },
+                        { label: "Alıntı (Quote)", type: "quote" as const, icon: "format_quote", color: "text-purple-600" },
+                        { label: "Bilgi Kutusu (Callout)", type: "callout" as const, icon: "info", color: "text-sky-600" },
+                        { label: "Kod Bloğu", type: "code" as const, icon: "code", color: "text-slate-600" },
+                        { label: "Tablo", type: "table" as const, icon: "table", color: "text-slate-600" },
+                      ].map((item) => (
+                        <button
+                          key={item.type}
+                          onClick={() => {
+                            if (activeBlockIndex !== null) {
+                              const updated = [...blocks];
+                              updated[activeBlockIndex].type = item.type;
+                              setBlocks(updated);
+                              setShowSlashMenu(false);
+                              triggerAutoSave(updated);
                             }
-                            setBlocks(updated);
-                            setShowSlashMenu(false);
-                            triggerAutoSave(updated);
-                          }
-                        }}
-                        className="w-full text-left flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-surface-container transition-colors"
-                      >
-                        <span className={`material-symbols-outlined text-[18px] ${item.color}`}>{item.icon}</span>
-                        <span>{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Toolbar Selector */}
-          <div className="pt-4 mt-8 border-t border-outline-variant/15 flex items-center justify-between select-none">
-            <div className="flex items-center space-x-1.5 flex-wrap gap-y-1.5">
-              {[
-                { label: "Başlık", type: "heading" as const, icon: "title" },
-                { label: "Metin", type: "paragraph" as const, icon: "short_text" },
-                { label: "Görev", type: "checklist" as const, icon: "check_box" },
-                { label: "Liste", type: "bullet" as const, icon: "format_list_bulleted" },
-                { label: "Açılır", type: "toggle" as const, icon: "arrow_drop_down" },
-                { label: "Alıntı", type: "quote" as const, icon: "format_quote" },
-                { label: "Bilgi", type: "callout" as const, icon: "info" },
-                { label: "Kod", type: "code" as const, icon: "code" },
-                { label: "Tablo", type: "table" as const, icon: "table" },
-              ].map((btn) => (
-                <button
-                  key={btn.type}
-                  onClick={() => addBlock(btn.type)}
-                  className="px-2.5 py-1.5 bg-surface-container-low hover:bg-surface-container rounded-xl text-[11px] font-semibold text-on-surface flex items-center space-x-1 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[15px]">{btn.icon}</span>
-                  <span>{btn.label}</span>
-                </button>
-              ))}
+                          }}
+                          className="w-full flex items-center space-x-3 px-2 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container rounded-xl text-left transition-colors"
+                        >
+                          <span className={`material-symbols-outlined text-[18px] ${item.color}`}>{item.icon}</span>
+                          <span>{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <span className="text-[11px] text-outline font-label-sm font-medium">
-              &apos;/&apos; ile komutlara ulaşın
+          </>
+        ) : (
+          /* Empty reading pane state for desktop */
+          <div className="h-full flex flex-col justify-center items-center text-center p-8 bg-surface-container-lowest select-none">
+            <span className="material-symbols-outlined text-6xl text-outline/40 mb-4 animate-bounce">
+              edit_note
             </span>
-          </div>
-        </div>
-      )}
-
-      {/* Empty default landing workspace */}
-      {!currentView && !activePageId && (
-        <div className="max-w-3xl mx-auto py-12 px-4 animate-in fade-in slide-in-from-bottom-4 duration-350 select-none">
-          {/* Top Welcome / Header */}
-          <div className="flex flex-col items-center text-center mb-10">
-            <div className="w-20 h-20 rounded-full bg-primary/5 flex items-center justify-center p-2 mb-4 ring-2 ring-primary/10 shadow-sm relative group">
-              <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary/20 via-transparent to-primary/10 opacity-60 group-hover:scale-110 transition-transform duration-300" />
-              <img src="/logo-mascot.png" alt="Clown" className="w-14 h-14 object-contain relative z-10 filter drop-shadow-md group-hover:rotate-12 transition-transform duration-300" />
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
-              <h2 className="text-xl md:text-2xl font-black font-headline-lg text-on-surface tracking-tight">
-                Hoş Geldiniz, Akif 👋
-              </h2>
-            </div>
-            <p className="text-xs text-secondary mt-1.5 max-w-sm leading-relaxed">
-              Kişisel Not Çalışma Alanınızda düzenli, sade ve hızlı çalışın. Sol ağaçtan notlarınızı yönetin veya hemen başlayın.
+            <h2 className="text-base font-extrabold text-secondary mb-1">Not Seçilmedi</h2>
+            <p className="text-xs text-outline max-w-[280px] leading-relaxed">
+              Detayları görüntülemek ve düzenlemek için sol listeden bir not seçin veya yeni bir tane oluşturun.
             </p>
           </div>
+        )}
+      </div>
 
-          {/* Quick Stats Grid */}
-          <div className="grid grid-cols-3 gap-3 mb-8">
-            {[
-              { label: "Defterler", value: pages.length, icon: "book", color: "text-[#b61722] bg-[#b61722]/5" },
-              { label: "Favoriler", value: pages.filter(p => p.isFavorite).length, icon: "star", color: "text-amber-600 bg-amber-50" },
-              { label: "Son İnceleme", value: recentPages.length, icon: "history", color: "text-emerald-600 bg-emerald-50" },
-            ].map((stat, i) => (
-              <div key={i} className="flex flex-col items-center justify-center p-4 bg-surface-container-low/40 border border-outline-variant/15 rounded-2xl shadow-xs">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-2 ${stat.color}`}>
-                  <span className="material-symbols-outlined text-[18px]">{stat.icon}</span>
-                </div>
-                <span className="text-base font-extrabold text-on-surface leading-tight">{stat.value}</span>
-                <span className="text-[9px] font-bold text-outline uppercase tracking-wider font-label-caps mt-0.5">{stat.label}</span>
-              </div>
-            ))}
+      {/* ---------------------------------------------------- */}
+      {/* MOBILE SCREEN: FOLDERS LIST (Only on mobile) */}
+      {/* ---------------------------------------------------- */}
+      <div
+        className={`w-full h-full flex flex-col bg-surface-container-low lg:hidden select-none ${
+          !folderParam && !activePageId ? "flex" : "hidden"
+        }`}
+      >
+        <header className="px-4 pt-5 pb-3 bg-surface-container-low flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight font-headline-lg text-on-surface">
+              Klasörler
+            </h1>
+            <p className="text-[11px] text-secondary font-medium mt-0.5">
+              Apple Stil Notlar
+            </p>
           </div>
+          <button
+            onClick={() => handleCreatePage(null, "Yeni Klasör")}
+            className="px-4 py-1.5 bg-white text-on-surface text-xs font-bold rounded-full border border-outline-variant/30 shadow-2xs hover:bg-surface-container-high transition-all"
+          >
+            Yeni Klasör
+          </button>
+        </header>
 
-          {/* Recent Pages Section */}
-          {recentPages.length > 0 && (
-            <div className="mb-8 bg-surface-container-low/30 border border-outline-variant/15 rounded-2xl p-4 shadow-xs">
-              <div className="flex items-center space-x-1.5 mb-3 pb-1 border-b border-outline-variant/10">
-                <span className="material-symbols-outlined text-[15px] text-primary">history</span>
-                <h3 className="text-[10px] font-bold uppercase tracking-wider text-secondary font-label-caps">Son Düzenlenenler</h3>
-              </div>
-              <div className="space-y-1.5">
-                {recentPages.map((rp) => (
-                  <Link
-                    key={rp.id}
-                    href={`/notes?id=${rp.id}`}
-                    className="flex items-center justify-between p-2.5 bg-surface-container-lowest hover:bg-surface-container border border-outline-variant/20 rounded-xl hover:border-primary/20 transition-all group"
-                  >
-                    <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-                      <span className="material-symbols-outlined text-outline group-hover:text-primary transition-colors text-[16px]">
-                        {rp.icon || "description"}
-                      </span>
-                      <span className="text-xs font-semibold truncate text-on-surface">{rp.title}</span>
-                    </div>
-                    <span className="text-[9px] text-outline opacity-75 mr-1 font-bold group-hover:text-primary transition-colors">Aç</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Quick Modern Action Card */}
-          <div className="flex flex-col items-center justify-center p-5 bg-gradient-to-tr from-surface-container-low/20 to-surface-container-low/50 border border-outline-variant/15 rounded-2xl text-center shadow-xs">
-            <span className="text-[9px] font-bold text-secondary uppercase font-label-caps tracking-wider block mb-3">HIZLI BAŞLANGIÇ</span>
+        <div className="flex-1 overflow-y-auto px-4 space-y-6 pt-2 pb-24">
+          <div className="bg-white rounded-2xl border border-outline-variant/20 shadow-xs divide-y divide-outline-variant/15 overflow-hidden">
             <button
-              onClick={() => {
-                setShowCreateModal(true);
-                setCreateTarget({ name: "" });
-              }}
-              className="flex items-center space-x-2 px-6 py-2.5 bg-primary text-on-primary hover:bg-primary-container text-xs font-extrabold rounded-2xl shadow-md hover:-translate-y-0.5 hover:shadow-lg transition-all"
+              onClick={() => updateParams({ folder: "all" })}
+              className="w-full flex items-center justify-between px-4 py-3.5 text-sm text-left hover:bg-surface-container-low/40 active:bg-surface-container-low transition-colors"
             >
-              <span className="material-symbols-outlined text-[16px]">note_add</span>
-              <span>Yeni Not Defteri Oluştur</span>
+              <div className="flex items-center space-x-3 text-on-surface">
+                <span className="material-symbols-outlined text-[20px] text-blue-500 font-bold">folder_copy</span>
+                <span className="font-semibold">Hepsi</span>
+              </div>
+              <span className="material-symbols-outlined text-[18px] text-outline/50">chevron_right</span>
             </button>
+
+            {pages
+              .filter((p) => p.parentPageId === null && !p.deletedAt)
+              .map((folderPage) => (
+                <button
+                  key={folderPage.id}
+                  onClick={() => updateParams({ folder: folderPage.id })}
+                  className="w-full flex items-center justify-between px-4 py-3.5 text-sm text-left hover:bg-surface-container-low/40 active:bg-surface-container-low transition-colors"
+                >
+                  <div className="flex items-center space-x-3 text-on-surface">
+                    <span className="material-symbols-outlined text-[20px] text-secondary">
+                      {folderPage.icon || "folder"}
+                    </span>
+                    <span className="font-semibold">{folderPage.title}</span>
+                  </div>
+                  <span className="material-symbols-outlined text-[18px] text-outline/50">chevron_right</span>
+                </button>
+              ))}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Details Side Panel overlay */}
       {activePage && (
@@ -1075,50 +1127,6 @@ function NotesContent() {
 
       {/* Global Command+K Quick Search dialog */}
       <SearchModal />
-
-      {/* Create Modal dialog */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-xs flex items-center justify-center p-4 select-none">
-          <div className="w-full max-w-md bg-surface-container-lowest rounded-3xl p-6 shadow-2xl border border-outline-variant/30 animate-in slide-in-from-bottom duration-200">
-            <h2 className="text-base font-bold font-headline-lg mb-4">
-              Yeni Not Defteri Oluştur
-            </h2>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleCreatePage(null, createTarget.name.trim());
-              setShowCreateModal(false);
-            }} className="space-y-4">
-              <div>
-                <label className="text-xs font-medium text-secondary block mb-1">İsim:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="örn. Günlük Notlar veya Çalışma Planı"
-                  value={createTarget.name}
-                  onChange={(e) => setCreateTarget({ name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 text-sm bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary text-on-surface"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-medium text-outline hover:bg-surface-container rounded-xl transition-colors"
-                >
-                  İptal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-xs font-semibold bg-primary text-on-primary rounded-xl shadow-md hover:bg-primary-container transition-colors"
-                >
-                  Oluştur
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Move Page / Parent Selector Modal dialog */}
       {showMoveModal && (
@@ -1172,12 +1180,14 @@ function NotesContent() {
 
 export default function NotesPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-background p-6 flex flex-col justify-center items-center">
-        <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mb-3" />
-        <p className="text-xs text-secondary">Notlar yükleniyor...</p>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background p-6 flex flex-col justify-center items-center">
+          <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mb-3" />
+          <p className="text-xs text-secondary">Notlar yükleniyor...</p>
+        </div>
+      }
+    >
       <NotesContent />
     </Suspense>
   );

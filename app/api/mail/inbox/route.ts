@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
     // Seçilen hesap ve klasöre göre filtrele
     const targetAccounts = accountFilter === "all"
-      ? accounts
+      ? accounts.filter((a) => !a.isHidden)
       : accounts.filter((a) => a.provider === accountFilter);
 
     for (const acc of targetAccounts) {

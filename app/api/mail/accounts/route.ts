@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { saveMailAccount, listMailAccounts, removeMailAccount } from "@/lib/firestore/mailAccounts";
+import { saveMailAccount, listMailAccounts, removeMailAccount, toggleMailAccountVisibility } from "@/lib/firestore/mailAccounts";
 
 // GET /api/mail/accounts → bağlı hesapları listele
 export async function GET() {
   try {
     const accounts = await listMailAccounts();
-    // Şifreyi döndürme
-    const safe = accounts.map(({ id, email, provider, label }) => ({
-      id, email, provider, label,
+    const safe = accounts.map(({ id, email, provider, label, isHidden }) => ({
+      id, email, provider, label, isHidden,
     }));
     return NextResponse.json(safe);
   } catch (err: unknown) {
@@ -19,14 +18,43 @@ export async function GET() {
 // POST /api/mail/accounts → yeni hesap ekle
 export async function POST(request: Request) {
   try {
-    const { email, appPassword, label } = await request.json();
+    const { email, appPassword, label, provider, imapHost, imapPort, smtpHost, smtpPort } = await request.json();
     if (!email || !appPassword) {
-      return NextResponse.json({ error: "E-posta ve uygulama şifresi zorunludur" }, { status: 400 });
+      return NextResponse.json({ error: "E-posta ve şifre zorunludur" }, { status: 400 });
     }
 
-    const id = `hotmail_${email.replace(/[@.]/g, "_")}`;
-    await saveMailAccount(id, email, appPassword, "hotmail", label ?? "Hotmail");
+    const accProvider = provider || "hotmail";
+    const id = `${accProvider}_${email.replace(/[@.]/g, "_")}`;
+    
+    await saveMailAccount(
+      id, 
+      email, 
+      appPassword, 
+      accProvider, 
+      label ?? (accProvider === "imap" ? "Webmail" : "Hotmail"),
+      undefined, // accessToken
+      undefined, // refreshToken
+      undefined, // expiresAt
+      imapHost,
+      Number(imapPort) || undefined,
+      smtpHost,
+      Number(smtpPort) || undefined
+    );
+    
     return NextResponse.json({ success: true, id });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Hata";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// PATCH /api/mail/accounts → görünürlüğü değiştir
+export async function PATCH(request: Request) {
+  try {
+    const { id, isHidden } = await request.json();
+    if (!id) return NextResponse.json({ error: "ID gerekli" }, { status: 400 });
+    await toggleMailAccountVisibility(id, Boolean(isHidden));
+    return NextResponse.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Hata";
     return NextResponse.json({ error: message }, { status: 500 });

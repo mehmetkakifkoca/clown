@@ -10,7 +10,6 @@ export function BottomTabBar() {
     { name: "Posta", path: "/inbox", icon: "mail" },
     { name: "Takvim", path: "/calendar", icon: "calendar_today" },
     { name: "Asistan", path: "/assistant", icon: "smart_toy", featured: true },
-    { name: "Notlar", path: "/notes", icon: "edit_note" },
     { name: "Hesaplar", path: "/accounts", icon: "analytics" },
   ];
 

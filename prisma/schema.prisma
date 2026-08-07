@@ -20,26 +20,108 @@ model MailAccount {
 }
 
 model Page {
-  id        String   @id @default(uuid())
-  title     String   @default("Untitled Page")
-  icon      String   @default("description")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  blocks    Block[]
+  id           String        @id @default(uuid())
+  userId       String        @default("akif")
+  parentPageId String?
+  title        String        @default("Başlıksız Sayfa")
+  icon         String        @default("description")
+  coverImage   String?
+  sortOrder    Int           @default(0)
+  isArchived   Boolean       @default(false)
+  isFavorite   Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  lastOpenedAt DateTime?
+  deletedAt    DateTime?
+  
+  parentPage   Page?         @relation("PageHierarchy", fields: [parentPageId], references: [id], onDelete: Cascade)
+  subPages     Page[]        @relation("PageHierarchy")
+  blocks       Block[]
+  tasks        Task[]
+  attachments  Attachment[]
+  versions     PageVersion[]
 }
 
 model Block {
-  id        String   @id @default(uuid())
-  pageId    String
-  type      String   // heading, paragraph, checklist
-  content   String   @default("")
-  checked   Boolean  @default(false)
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  id             String    @id @default(uuid())
+  pageId         String
+  parentBlockId  String?
+  blockType      String    // paragraph, heading, checklist, bullet, toggle, quote, callout, divider, code, table
+  content        String    @default("")
+  propertiesJson String?   // Görev veya tablo gibi özel verileri JSON saklar
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+  page           Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@index([pageId])
+}
+
+model Label {
+  id        String          @id @default(uuid())
+  userId    String          @default("akif")
+  name      String          @unique
+  color     String          @default("#757575")
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  relations LabelRelation[]
+}
+
+model LabelRelation {
+  id         String   @id @default(uuid())
+  labelId    String
+  entityType String   // folder, notebook, page, task
+  entityId   String
+  createdAt  DateTime @default(now())
+  label      Label    @relation(fields: [labelId], references: [id], onDelete: Cascade)
+}
+
+model Task {
+  id           String    @id @default(uuid())
+  userId       String    @default("akif")
+  pageId       String
+  blockId      String
+  title        String
+  description  String?
+  status       String    @default("TODO") // TODO, IN_PROGRESS, ON_HOLD, DONE, CANCELLED
+  priority     String    @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  dueDate      DateTime?
+  reminderDate DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  page         Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+model Attachment {
+  id        String    @id @default(uuid())
+  userId    String    @default("akif")
+  pageId    String
+  blockId   String
+  fileName  String
+  fileType  String
+  fileSize  Int
+  fileUrl   String
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  page      Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+model PageVersion {
+  id              String   @id @default(uuid())
+  pageId          String
+  contentSnapshot String
+  createdAt       DateTime @default(now())
+  page            Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+model RecentItem {
+  id        String   @id @default(uuid())
+  userId    String   @default("akif")
+  pageId    String
+  openedAt  DateTime @default(now())
 }
 
 model TrackedInstagramAccount {
