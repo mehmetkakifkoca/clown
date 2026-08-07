@@ -150,6 +150,7 @@ function SidebarNavContent() {
 
   const menuItems = [
     { label: "Takvim", icon: "calendar_today", href: "/calendar", subtext: "Ajanda" },
+    { label: "Asistan", icon: "smart_toy", href: "/assistant", subtext: "Claude Destekli" },
     { label: "Hesaplar", icon: "analytics", href: "/accounts", subtext: "Instagram Analiz" },
     { label: "Ayarlar", icon: "settings", href: "/settings/accounts", subtext: "OAuth Entegrasyon" },
   ];
