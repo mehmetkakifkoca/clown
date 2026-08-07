@@ -21,6 +21,10 @@ export interface StoredMailAccount {
   
   // Visibility toggle
   isHidden?: boolean;
+
+  // Feature toggles
+  useForMail?: boolean;
+  useForCalendar?: boolean;
   
   // OAuth credentials
   accessToken?: string;
@@ -78,6 +82,10 @@ export async function saveMailAccount(
 
 export async function toggleMailAccountVisibility(id: string, isHidden: boolean): Promise<void> {
   await setDoc(doc(db, "mailAccounts", id), { isHidden }, { merge: true });
+}
+
+export async function updateMailAccountCapabilities(id: string, useForMail: boolean, useForCalendar: boolean): Promise<void> {
+  await setDoc(doc(db, "mailAccounts", id), { useForMail, useForCalendar }, { merge: true });
 }
 
 export async function removeMailAccount(id: string): Promise<void> {

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { saveMailAccount, listMailAccounts, removeMailAccount, toggleMailAccountVisibility } from "@/lib/firestore/mailAccounts";
+import { saveMailAccount, listMailAccounts, removeMailAccount, toggleMailAccountVisibility, updateMailAccountCapabilities } from "@/lib/firestore/mailAccounts";
 
 // GET /api/mail/accounts → bağlı hesapları listele
 export async function GET() {
   try {
     const accounts = await listMailAccounts();
-    const safe = accounts.map(({ id, email, provider, label, isHidden }) => ({
-      id, email, provider, label, isHidden,
+    const safe = accounts.map(({ id, email, provider, label, isHidden, useForMail, useForCalendar }) => ({
+      id, email, provider, label, isHidden, useForMail, useForCalendar,
     }));
     return NextResponse.json(safe);
   } catch (err: unknown) {
@@ -48,12 +48,19 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH /api/mail/accounts → görünürlüğü değiştir
+// PATCH /api/mail/accounts → görünürlüğü veya özellikleri değiştir
 export async function PATCH(request: Request) {
   try {
-    const { id, isHidden } = await request.json();
+    const { id, isHidden, useForMail, useForCalendar } = await request.json();
     if (!id) return NextResponse.json({ error: "ID gerekli" }, { status: 400 });
-    await toggleMailAccountVisibility(id, Boolean(isHidden));
+    
+    if (typeof isHidden !== "undefined") {
+      await toggleMailAccountVisibility(id, Boolean(isHidden));
+    }
+    if (typeof useForMail !== "undefined" || typeof useForCalendar !== "undefined") {
+      await updateMailAccountCapabilities(id, Boolean(useForMail), Boolean(useForCalendar));
+    }
+    
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Hata";

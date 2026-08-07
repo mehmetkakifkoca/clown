@@ -20,8 +20,8 @@ export async function GET(request: Request) {
 
     // Seçilen hesap ve klasöre göre filtrele
     const targetAccounts = accountFilter === "all"
-      ? accounts.filter((a) => !a.isHidden)
-      : accounts.filter((a) => a.provider === accountFilter);
+      ? accounts.filter((a) => !a.isHidden && a.useForMail !== false)
+      : accounts.filter((a) => a.provider === accountFilter && a.useForMail !== false);
 
     for (const acc of targetAccounts) {
       let accessToken = acc.accessToken;

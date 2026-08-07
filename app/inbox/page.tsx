@@ -343,7 +343,7 @@ function InboxContent() {
               placeholder="Ara..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8.5 pr-4 py-1.5 text-xs bg-surface-container-low border border-outline-variant/30 rounded-xl focus:outline-none focus:border-primary/50 text-on-surface font-medium"
+              className="w-full pl-10 pr-4 py-1.5 text-xs bg-surface-container-low border border-outline-variant/30 rounded-xl focus:outline-none focus:border-primary/50 text-on-surface font-medium"
             />
             {searchTerm && (
               <button

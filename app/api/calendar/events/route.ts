@@ -11,7 +11,7 @@ import { listMailAccounts, type StoredMailAccount } from "@/lib/firestore/mailAc
 
 async function getGoogleAccounts(): Promise<StoredMailAccount[]> {
   const accounts = await listMailAccounts();
-  return accounts.filter((a) => a.provider === "gmail" && a.accessToken);
+  return accounts.filter((a) => a.provider === "gmail" && a.accessToken && a.useForCalendar !== false);
 }
 
 async function getAccessTokenForAccount(accountEmail: string): Promise<string | null> {

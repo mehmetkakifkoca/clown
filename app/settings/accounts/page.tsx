@@ -9,6 +9,8 @@ interface ConnectedAccount {
   provider: string;
   label: string;
   isHidden?: boolean;
+  useForMail?: boolean;
+  useForCalendar?: boolean;
 }
 
 export default function AccountSettingsPage() {
@@ -48,7 +50,14 @@ export default function AccountSettingsPage() {
     try {
       const res = await fetch("/api/mail/accounts");
       const data = await res.json();
-      if (Array.isArray(data)) setAccounts(data);
+      if (Array.isArray(data)) {
+        // Fallback default capabilities to true if undefined
+        setAccounts(data.map(acc => ({
+          ...acc,
+          useForMail: acc.useForMail !== false,
+          useForCalendar: acc.useForCalendar !== false
+        })));
+      }
     } catch { /* sessiz hata */ }
   };
 
@@ -60,12 +69,26 @@ export default function AccountSettingsPage() {
 
   const handleToggleVisibility = async (id: string, currentIsHidden: boolean) => {
     try {
-      // Optimistic update
       setAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, isHidden: !currentIsHidden } : acc));
       await fetch(`/api/mail/accounts`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, isHidden: !currentIsHidden })
+      });
+      loadAccounts();
+    } catch (e) {
+      console.error(e);
+      loadAccounts();
+    }
+  };
+
+  const handleToggleCapability = async (id: string, field: "useForMail" | "useForCalendar", currentValue: boolean) => {
+    try {
+      setAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, [field]: !currentValue } : acc));
+      await fetch(`/api/mail/accounts`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, [field]: !currentValue })
       });
       loadAccounts();
     } catch (e) {
@@ -120,6 +143,51 @@ export default function AccountSettingsPage() {
   const hotmailAcc = accounts.find((a) => a.provider === "hotmail");
   const googleAccs = accounts.filter((a) => a.provider === "gmail");
   const imapAccs = accounts.filter((a) => a.provider === "imap");
+
+  const AccountItem = ({ acc }: { acc: ConnectedAccount }) => (
+    <div className={`flex flex-col p-3 rounded-xl transition-colors ${acc.isHidden ? 'opacity-60 bg-surface-container-lowest' : 'bg-surface-container-low/30'} border border-outline-variant/20 mb-2`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-2">
+          <span className="text-sm font-medium text-on-surface">{acc.email}</span>
+          {acc.isHidden && <span className="text-[10px] bg-surface-container text-secondary px-2 rounded-md font-label-caps">Gizlendi</span>}
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 hidden sm:inline-block">✓ Bağlı</span>
+          <button onClick={() => handleToggleVisibility(acc.id, !!acc.isHidden)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${acc.isHidden ? 'text-secondary hover:bg-surface-container' : 'text-primary hover:bg-primary/10'}`} title={acc.isHidden ? "Ana Sayfada Göster" : "Ana Sayfadan Gizle"}>
+            <span className="material-symbols-outlined text-[18px]">{acc.isHidden ? "visibility_off" : "visibility"}</span>
+          </button>
+          <button onClick={() => handleDisconnect(acc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
+            Kaldır
+          </button>
+        </div>
+      </div>
+      
+      {/* Capability Toggles */}
+      <div className="flex items-center space-x-4 mt-2 pt-2 border-t border-outline-variant/10">
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input 
+            type="checkbox" 
+            checked={!!acc.useForMail} 
+            onChange={() => handleToggleCapability(acc.id, "useForMail", !!acc.useForMail)}
+            className="w-4 h-4 text-primary rounded border-outline-variant/50 focus:ring-primary"
+          />
+          <span className="text-xs font-medium text-secondary">Mail Özelliği</span>
+        </label>
+        
+        {acc.provider !== "imap" && (
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={!!acc.useForCalendar} 
+              onChange={() => handleToggleCapability(acc.id, "useForCalendar", !!acc.useForCalendar)}
+              className="w-4 h-4 text-primary rounded border-outline-variant/50 focus:ring-primary"
+            />
+            <span className="text-xs font-medium text-secondary">Takvim Özelliği</span>
+          </label>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background text-on-surface px-6 md:px-10 lg:px-14 pt-6 pb-28 md:pb-8">
@@ -196,7 +264,7 @@ export default function AccountSettingsPage() {
 
         {/* IMAP / Webmail Kartı */}
         <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center space-x-3.5">
               <div className="w-11 h-11 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-600 flex-shrink-0 border border-orange-200">
                 <span className="material-symbols-outlined text-2xl">dns</span>
@@ -218,65 +286,43 @@ export default function AccountSettingsPage() {
           </div>
 
           {imapAccs.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-outline-variant/20 space-y-2">
-              {imapAccs.map((acc) => (
-                <div key={acc.id} className={`flex items-center justify-between p-2 rounded-xl transition-colors ${acc.isHidden ? 'opacity-60 bg-surface-container-lowest' : 'bg-surface-container-low/30'}`}>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-medium text-on-surface">{acc.email}</span>
-                    {acc.isHidden && <span className="text-[10px] bg-surface-container text-secondary px-2 rounded-md font-label-caps">Gizlendi</span>}
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
-                    <button onClick={() => handleToggleVisibility(acc.id, !!acc.isHidden)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${acc.isHidden ? 'text-secondary hover:bg-surface-container' : 'text-primary hover:bg-primary/10'}`} title={acc.isHidden ? "Ana Sayfada Göster" : "Ana Sayfadan Gizle"}>
-                      <span className="material-symbols-outlined text-[18px]">{acc.isHidden ? "visibility_off" : "visibility"}</span>
-                    </button>
-                    <button onClick={() => handleDisconnect(acc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
-                      Kaldır
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <div className="space-y-2">
+              {imapAccs.map((acc) => <AccountItem key={acc.id} acc={acc} />)}
             </div>
           )}
         </div>
 
         {/* Microsoft Kartı */}
-        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs flex items-center justify-between">
-          <div className="flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-blue-50 flex items-center justify-center text-[#0078d4] flex-shrink-0 border border-blue-200">
-              <span className="material-symbols-outlined text-2xl">mail</span>
+        <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center space-x-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-blue-50 flex items-center justify-center text-[#0078d4] flex-shrink-0 border border-blue-200">
+                <span className="material-symbols-outlined text-2xl">mail</span>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-on-surface">Microsoft Hotmail / Outlook</h2>
+                <p className="text-xs text-secondary mt-0.5">
+                  Microsoft OAuth 2.0 ile e-postalarınızı ve takviminizi bağlayın
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-base font-bold text-on-surface">Microsoft Hotmail / Outlook</h2>
-              <p className="text-xs text-secondary mt-0.5">
-                {hotmailAcc ? hotmailAcc.email : "Microsoft OAuth 2.0 ile e-postalarınızı bağlayın"}
-              </p>
-            </div>
-          </div>
 
-          {hotmailAcc ? (
-            <div className="flex items-center space-x-2">
-              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
-              <button onClick={() => handleToggleVisibility(hotmailAcc.id, !!hotmailAcc.isHidden)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${hotmailAcc.isHidden ? 'text-secondary hover:bg-surface-container' : 'text-primary hover:bg-primary/10'}`} title={hotmailAcc.isHidden ? "Ana Sayfada Göster" : "Ana Sayfadan Gizle"}>
-                <span className="material-symbols-outlined text-[18px]">{hotmailAcc.isHidden ? "visibility_off" : "visibility"}</span>
-              </button>
-              <button onClick={() => handleDisconnect(hotmailAcc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
-                Kaldır
-              </button>
-            </div>
-          ) : (
-            <a
-              href="/api/auth/microsoft"
-              className="px-4 py-2.5 bg-[#0078d4] text-white rounded-xl font-bold text-xs shadow-sm hover:bg-[#005a9e] transition-all"
-            >
-              Hotmail Bağla
-            </a>
-          )}
+            {!hotmailAcc && (
+              <a
+                href="/api/auth/microsoft"
+                className="px-4 py-2.5 bg-[#0078d4] text-white rounded-xl font-bold text-xs shadow-sm hover:bg-[#005a9e] transition-all flex-shrink-0"
+              >
+                Hotmail Bağla
+              </a>
+            )}
+          </div>
+          
+          {hotmailAcc && <AccountItem acc={hotmailAcc} />}
         </div>
 
         {/* Google Kartı(ları) */}
         <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/30 shadow-xs">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center space-x-3.5">
               <div className="w-11 h-11 rounded-2xl bg-red-50 flex items-center justify-center text-red-600 flex-shrink-0 border border-red-200">
                 <span className="material-symbols-outlined text-2xl">mark_email_unread</span>
@@ -284,9 +330,7 @@ export default function AccountSettingsPage() {
               <div>
                 <h2 className="text-base font-bold text-on-surface">Google / Gmail & Calendar</h2>
                 <p className="text-xs text-secondary mt-0.5">
-                  {googleAccs.length > 0
-                    ? `${googleAccs.length} hesap bağlı`
-                    : "Gmail ve Google Calendar etkinliklerinizi canlı senkronize edin"}
+                  Gmail ve Google Calendar etkinliklerinizi canlı senkronize edin
                 </p>
               </div>
             </div>
@@ -300,24 +344,8 @@ export default function AccountSettingsPage() {
           </div>
 
           {googleAccs.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-outline-variant/20 space-y-2">
-              {googleAccs.map((acc) => (
-                <div key={acc.id} className={`flex items-center justify-between p-2 rounded-xl transition-colors ${acc.isHidden ? 'opacity-60 bg-surface-container-lowest' : 'bg-surface-container-low/30'}`}>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-medium text-on-surface">{acc.email}</span>
-                    {acc.isHidden && <span className="text-[10px] bg-surface-container text-secondary px-2 rounded-md font-label-caps">Gizlendi</span>}
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">✓ Bağlı</span>
-                    <button onClick={() => handleToggleVisibility(acc.id, !!acc.isHidden)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${acc.isHidden ? 'text-secondary hover:bg-surface-container' : 'text-primary hover:bg-primary/10'}`} title={acc.isHidden ? "Ana Sayfada Göster" : "Ana Sayfadan Gizle"}>
-                      <span className="material-symbols-outlined text-[18px]">{acc.isHidden ? "visibility_off" : "visibility"}</span>
-                    </button>
-                    <button onClick={() => handleDisconnect(acc.id)} className="px-3 py-1.5 bg-error-container/20 text-error text-xs font-semibold rounded-xl hover:bg-error-container">
-                      Kaldır
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <div className="space-y-2">
+              {googleAccs.map((acc) => <AccountItem key={acc.id} acc={acc} />)}
             </div>
           )}
         </div>
