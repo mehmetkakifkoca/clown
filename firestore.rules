@@ -3,16 +3,34 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Notlar — Sayfalar ve Bloklar
-    match /pages/{pageId} {
-      allow read, write: if true;
-      match /blocks/{blockId} {
-        allow read, write: if true;
-      }
-    }
-
     // Posta Hesapları (kimlik bilgileri)
     match /mailAccounts/{accountId} {
+      allow read, write: if true;
+    }
+
+    // Notlar, Görevler ve Projeler
+    match /notePages/{pageId} {
+      allow read, write: if true;
+    }
+    match /noteBlocks/{blockId} {
+      allow read, write: if true;
+    }
+    match /noteTasks/{taskId} {
+      allow read, write: if true;
+    }
+    match /noteProjects/{projectId} {
+      allow read, write: if true;
+    }
+    match /noteLabels/{labelId} {
+      allow read, write: if true;
+    }
+    match /noteLabelRelations/{relationId} {
+      allow read, write: if true;
+    }
+    match /notePageVersions/{versionId} {
+      allow read, write: if true;
+    }
+    match /noteRecentItems/{itemId} {
       allow read, write: if true;
     }
 
