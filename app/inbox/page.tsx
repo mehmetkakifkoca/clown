@@ -767,9 +767,9 @@ function InboxContent() {
               Gerade aktualisiert
             </p>
           </div>
-          <button className="px-4 py-1.5 bg-white text-on-surface text-xs font-bold rounded-full border border-outline-variant/30 shadow-2xs hover:bg-surface-container-high transition-all">
+          <Link href="/settings/accounts" className="px-4 py-1.5 bg-white text-on-surface text-xs font-bold rounded-full border border-outline-variant/30 shadow-2xs hover:bg-surface-container-high transition-all">
             Bearbeiten
-          </button>
+          </Link>
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 space-y-6 pt-2 pb-24">
@@ -818,10 +818,11 @@ function InboxContent() {
               const isGoogle = acc.provider === "gmail";
               const label = isGoogle ? "Gmail" : "Outlook";
               return (
-                <div key={acc.id} className="space-y-1.5">
-                  <h3 className="px-2 text-xs font-bold text-secondary uppercase tracking-wider font-label-caps opacity-80">
-                    {label} ({acc.email.split("@")[0]})
-                  </h3>
+                <details key={acc.id} className="group space-y-1.5">
+                  <summary className="px-2 flex items-center justify-between text-xs font-bold text-secondary uppercase tracking-wider font-label-caps opacity-80 cursor-pointer list-none select-none">
+                    <span>{label} ({acc.email.split("@")[0]})</span>
+                    <span className="material-symbols-outlined text-[16px] transition-transform group-open:rotate-180">expand_more</span>
+                  </summary>
                   <div className="bg-white rounded-2xl border border-outline-variant/20 shadow-xs divide-y divide-outline-variant/15 overflow-hidden">
                     <button
                       onClick={() => updateParams({ account: acc.provider, folder: "inbox" })}
@@ -856,7 +857,7 @@ function InboxContent() {
                       <span className="material-symbols-outlined text-[16px] text-outline/50">chevron_right</span>
                     </button>
                   </div>
-                </div>
+                </details>
               );
             })}
           </div>

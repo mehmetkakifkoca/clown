@@ -10,14 +10,15 @@ export function BottomTabBar() {
     { name: "Posta", path: "/inbox", icon: "mail" },
     { name: "Takvim", path: "/calendar", icon: "calendar_today" },
     { name: "Asistan", path: "/assistant", icon: "smart_toy", featured: true },
-    { name: "Hesaplar", path: "/accounts", icon: "analytics" },
+    { name: "Notlar", path: "/notes", icon: "description" },
+    { name: "Görevler", path: "/tasks", icon: "task_alt" },
   ];
 
   const featuredTab = tabs.find((tab) => tab.featured)!;
   const isFeaturedActive = pathname === featuredTab.path;
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-lowest/95 backdrop-blur-md border-t border-outline-variant/30 px-2 pt-2 pb-2 shadow-lg">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-lowest/95 backdrop-blur-md border-t border-outline-variant/30 px-2 pt-2 pb-6 shadow-lg">
       <div className="flex items-center justify-around max-w-md mx-auto">
         {tabs.map((tab) => {
           if (tab.featured) {
