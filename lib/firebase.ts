@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -14,5 +14,16 @@ const firebaseConfig = {
 // Next.js hot-reload'da app'i tekrar tekrar başlatmamak için kontrol
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-export const db = getFirestore(app);
+// IMAP/OAuth hesaplarında bazı alanlar (accessToken, refreshToken vb.) undefined
+// gelebiliyor; Firestore SDK'sı bunu varsayılan olarak reddediyor (setDoc hatası).
+// ignoreUndefinedProperties bu alanları sessizce atlar.
+let firestoreDb;
+try {
+  firestoreDb = initializeFirestore(app, { ignoreUndefinedProperties: true });
+} catch {
+  // Hot-reload sırasında zaten başlatılmışsa mevcut instance'ı kullan
+  firestoreDb = getFirestore(app);
+}
+
+export const db = firestoreDb;
 export default app;

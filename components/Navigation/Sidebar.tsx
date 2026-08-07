@@ -9,6 +9,8 @@ interface ConnectedAccount {
   email: string;
   provider: string;
   label: string;
+  isHidden?: boolean;
+  useForMail?: boolean;
 }
 
 interface SidebarPage {
@@ -33,6 +35,8 @@ function SidebarNavContent() {
   const [notesOpen, setNotesOpen] = useState(true);
 
   const currentAccount = searchParams.get("account") || "all";
+  // Ayarlar'da gizlenen veya "Mail Özelliği" kapatılan hesaplar burada gösterilmez
+  const visibleAccounts = accounts.filter((a) => !a.isHidden && a.useForMail !== false);
   const mailFolder = searchParams.get("folder") || "inbox";
   const notesFolder = searchParams.get("folder") || "all";
 
@@ -128,23 +132,24 @@ function SidebarNavContent() {
               <span>Tüm Mailler</span>
             </Link>
 
-            {accounts.map((acc) => {
-              const isAccActive = currentAccount === acc.provider;
+            {visibleAccounts.map((acc) => {
+              const isAccActive = currentAccount === acc.id;
+              const dotColor = acc.provider === "gmail" ? "bg-red-500" : acc.provider === "imap" ? "bg-orange-500" : "bg-blue-500";
               return (
                 <div key={acc.id} className="pt-1.5 space-y-0.5">
                   <div className="flex items-center space-x-1.5 px-2 py-0.5 text-[9px] font-bold text-outline uppercase font-label-caps tracking-wider">
-                    <span className={`w-1.5 h-1.5 rounded-full ${acc.provider === "gmail" ? "bg-red-500" : "bg-blue-500"}`} />
-                    <span className="truncate">{acc.provider === "gmail" ? "Google" : "Hotmail"} ({acc.email.split("@")[0]})</span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                    <span className="truncate">{acc.label} ({acc.email.split("@")[0]})</span>
                   </div>
 
-                  <Link href={`/inbox?account=${acc.provider}&folder=inbox`} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                  <Link href={`/inbox?account=${acc.id}&folder=inbox`} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
                     pathname.startsWith("/inbox") && isAccActive && mailFolder === "inbox" ? "bg-surface-container-highest text-primary font-bold" : "text-secondary hover:bg-surface-container-high"
                   }`}>
                     <span className="material-symbols-outlined text-[14px]">move_to_inbox</span>
                     <span>Gelen Kutusu</span>
                   </Link>
 
-                  <Link href={`/inbox?account=${acc.provider}&folder=sent`} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                  <Link href={`/inbox?account=${acc.id}&folder=sent`} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
                     pathname.startsWith("/inbox") && isAccActive && mailFolder === "sent" ? "bg-surface-container-highest text-primary font-bold" : "text-secondary hover:bg-surface-container-high"
                   }`}>
                     <span className="material-symbols-outlined text-[14px]">send</span>

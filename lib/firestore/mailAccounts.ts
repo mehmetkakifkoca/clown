@@ -84,8 +84,15 @@ export async function toggleMailAccountVisibility(id: string, isHidden: boolean)
   await setDoc(doc(db, "mailAccounts", id), { isHidden }, { merge: true });
 }
 
-export async function updateMailAccountCapabilities(id: string, useForMail: boolean, useForCalendar: boolean): Promise<void> {
-  await setDoc(doc(db, "mailAccounts", id), { useForMail, useForCalendar }, { merge: true });
+export async function renameMailAccount(id: string, label: string): Promise<void> {
+  await setDoc(doc(db, "mailAccounts", id), { label }, { merge: true });
+}
+
+export async function updateMailAccountCapabilities(
+  id: string,
+  updates: { useForMail?: boolean; useForCalendar?: boolean }
+): Promise<void> {
+  await setDoc(doc(db, "mailAccounts", id), updates, { merge: true });
 }
 
 export async function removeMailAccount(id: string): Promise<void> {

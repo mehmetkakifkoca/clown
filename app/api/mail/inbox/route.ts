@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { fetchGraphMessages, refreshAccessToken } from "@/lib/microsoft-graph";
 import { fetchGmailMessages, getValidGoogleAccessToken } from "@/lib/google";
+import { fetchImapMessages } from "@/lib/imap/client";
 import { listMailAccounts, saveMailAccount } from "@/lib/firestore/mailAccounts";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const filter = searchParams.get("filter") || "all";
-    const accountFilter = searchParams.get("account") || "all"; // all | gmail | hotmail
+    const accountFilter = searchParams.get("account") || "all"; // all | hesap id'si | provider adı (eski bağlantılarla uyum için)
     const folderFilter = searchParams.get("folder") || "inbox";  // inbox | sent | spam
+    const limit = Number(searchParams.get("limit")) || 50;
 
     const accounts = await listMailAccounts();
 
@@ -21,7 +23,7 @@ export async function GET(request: Request) {
     // Seçilen hesap ve klasöre göre filtrele
     const targetAccounts = accountFilter === "all"
       ? accounts.filter((a) => !a.isHidden && a.useForMail !== false)
-      : accounts.filter((a) => a.provider === accountFilter && a.useForMail !== false);
+      : accounts.filter((a) => (a.id === accountFilter || a.provider === accountFilter) && !a.isHidden && a.useForMail !== false);
 
     for (const acc of targetAccounts) {
       let accessToken = acc.accessToken;
@@ -40,12 +42,12 @@ export async function GET(request: Request) {
         } catch (e) { console.error("Google token yenileme hatası:", e); }
       }
 
-      if (!accessToken) continue;
+      if (!accessToken && acc.provider !== "imap") continue;
 
       if (acc.provider === "hotmail") {
         try {
           const folderPath = folderFilter === "sent" ? "sentitems" : folderFilter === "spam" ? "junkemail" : "inbox";
-          const msgs = await fetchGraphMessages(accessToken, 20, folderPath);
+          const msgs = await fetchGraphMessages(accessToken, limit, folderPath);
           const formatted = msgs.map((msg: any) => ({
             id: msg.id,
             uid: msg.id,
@@ -68,7 +70,7 @@ export async function GET(request: Request) {
       if (acc.provider === "gmail") {
         try {
           const gmailFolder = folderFilter === "sent" ? "SENT" : folderFilter === "spam" ? "SPAM" : "INBOX";
-          const msgs = await fetchGmailMessages(accessToken, 20, gmailFolder);
+          const msgs = await fetchGmailMessages(accessToken, limit, gmailFolder);
           const formatted = msgs.map((msg: any) => ({
             ...msg,
             provider: "gmail",
@@ -77,6 +79,38 @@ export async function GET(request: Request) {
           }));
           allMessages = allMessages.concat(formatted);
         } catch (e) { console.error("Gmail mail hatası:", e); }
+      }
+
+      if (acc.provider === "imap" && acc.imapHost) {
+        try {
+          const imapFolder = folderFilter === "sent" ? "sent" : folderFilter === "spam" ? "spam" : "inbox";
+          const msgs = await fetchImapMessages(
+            {
+              email: acc.email,
+              appPassword: acc.appPassword || "",
+              imapHost: acc.imapHost,
+              imapPort: acc.imapPort,
+            },
+            imapFolder,
+            limit
+          );
+          const formatted = msgs.map((msg) => ({
+            id: `imap::${acc.id}::${msg.mailbox}::${msg.uid}`,
+            uid: msg.uid,
+            subject: msg.subject,
+            from: msg.from,
+            fromEmail: msg.fromEmail,
+            date: msg.date,
+            rawDate: msg.rawDate,
+            snippet: msg.snippet,
+            body: msg.body,
+            isRead: msg.isRead,
+            hasAttachments: msg.hasAttachments,
+            provider: "imap",
+            accountEmail: acc.email,
+          }));
+          allMessages = allMessages.concat(formatted);
+        } catch (e) { console.error(`IMAP mail hatası (${acc.email}):`, e); }
       }
     }
 

@@ -67,6 +67,36 @@ export default function AccountSettingsPage() {
     loadAccounts();
   };
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState("");
+
+  const startEditingLabel = (acc: ConnectedAccount) => {
+    setEditingId(acc.id);
+    setEditingLabel(acc.label);
+  };
+
+  const cancelEditingLabel = () => {
+    setEditingId(null);
+    setEditingLabel("");
+  };
+
+  const saveLabel = async (id: string) => {
+    const trimmed = editingLabel.trim();
+    if (!trimmed) return;
+    setAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, label: trimmed } : acc));
+    setEditingId(null);
+    try {
+      await fetch("/api/mail/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, label: trimmed }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
+    loadAccounts();
+  };
+
   const handleToggleVisibility = async (id: string, currentIsHidden: boolean) => {
     try {
       setAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, isHidden: !currentIsHidden } : acc));
@@ -147,11 +177,41 @@ export default function AccountSettingsPage() {
   const AccountItem = ({ acc }: { acc: ConnectedAccount }) => (
     <div className={`flex flex-col p-3 rounded-xl transition-colors ${acc.isHidden ? 'opacity-60 bg-surface-container-lowest' : 'bg-surface-container-low/30'} border border-outline-variant/20 mb-2`}>
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center space-x-2">
-          <span className="text-sm font-medium text-on-surface">{acc.email}</span>
-          {acc.isHidden && <span className="text-[10px] bg-surface-container text-secondary px-2 rounded-md font-label-caps">Gizlendi</span>}
+        <div className="flex items-center space-x-2 min-w-0 flex-1">
+          {editingId === acc.id ? (
+            <>
+              <input
+                autoFocus
+                type="text"
+                value={editingLabel}
+                onChange={(e) => setEditingLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveLabel(acc.id);
+                  if (e.key === "Escape") cancelEditingLabel();
+                }}
+                className="text-sm font-medium text-on-surface bg-white px-2 py-1 rounded-lg border border-primary/40 focus:outline-none min-w-0 flex-1"
+              />
+              <button onClick={() => saveLabel(acc.id)} className="w-7 h-7 rounded-full flex items-center justify-center text-primary hover:bg-primary/10 flex-shrink-0" title="Kaydet">
+                <span className="material-symbols-outlined text-[16px]">check</span>
+              </button>
+              <button onClick={cancelEditingLabel} className="w-7 h-7 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container flex-shrink-0" title="Vazgeç">
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-bold text-on-surface truncate">{acc.label}</span>
+                <span className="text-[11px] text-secondary truncate">{acc.email}</span>
+              </div>
+              <button onClick={() => startEditingLabel(acc)} className="w-7 h-7 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container flex-shrink-0" title="Adı Değiştir">
+                <span className="material-symbols-outlined text-[15px]">edit</span>
+              </button>
+            </>
+          )}
+          {acc.isHidden && <span className="text-[10px] bg-surface-container text-secondary px-2 rounded-md font-label-caps flex-shrink-0">Gizlendi</span>}
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-shrink-0">
           <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 hidden sm:inline-block">✓ Bağlı</span>
           <button onClick={() => handleToggleVisibility(acc.id, !!acc.isHidden)} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${acc.isHidden ? 'text-secondary hover:bg-surface-container' : 'text-primary hover:bg-primary/10'}`} title={acc.isHidden ? "Ana Sayfada Göster" : "Ana Sayfadan Gizle"}>
             <span className="material-symbols-outlined text-[18px]">{acc.isHidden ? "visibility_off" : "visibility"}</span>
@@ -161,7 +221,7 @@ export default function AccountSettingsPage() {
           </button>
         </div>
       </div>
-      
+
       {/* Capability Toggles */}
       <div className="flex items-center space-x-4 mt-2 pt-2 border-t border-outline-variant/10">
         <label className="flex items-center space-x-2 cursor-pointer">

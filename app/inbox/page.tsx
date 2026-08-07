@@ -23,6 +23,15 @@ interface ConnectedAccount {
   email: string;
   provider: string;
   label: string;
+  isHidden?: boolean;
+  useForMail?: boolean;
+}
+
+interface EmailAttachment {
+  filename: string;
+  contentType: string;
+  size?: number;
+  downloadUrl: string;
 }
 
 interface RealEmailDetail {
@@ -37,6 +46,14 @@ interface RealEmailDetail {
   isRead: boolean;
   hasAttachments: boolean;
   provider?: string;
+  accountId?: string;
+  attachments?: EmailAttachment[];
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function InboxContent() {
@@ -61,7 +78,7 @@ function InboxContent() {
   
   // Compose modal states
   const [showCompose, setShowCompose] = useState(false);
-  const [compose, setCompose] = useState({ to: "", subject: "", body: "", provider: "gmail" });
+  const [compose, setCompose] = useState({ to: "", subject: "", body: "", accountId: "" });
   const [sending, setSending] = useState(false);
 
   // Single email detail states
@@ -137,8 +154,8 @@ function InboxContent() {
       if (Array.isArray(accounts)) {
         const visibleAccounts = accounts.filter(acc => !acc.isHidden && acc.useForMail !== false);
         setConnectedAccounts(visibleAccounts);
-        if (visibleAccounts.length > 0 && !compose.provider) {
-          setCompose(prev => ({ ...prev, provider: visibleAccounts[0].provider }));
+        if (visibleAccounts.length > 0) {
+          setCompose(prev => prev.accountId ? prev : { ...prev, accountId: visibleAccounts[0].id });
         }
       }
     } catch {
@@ -174,7 +191,7 @@ function InboxContent() {
       const res = await fetch("/api/mail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: compose.to, subject: compose.subject, text: compose.body, provider: compose.provider }),
+        body: JSON.stringify({ to: compose.to, subject: compose.subject, text: compose.body, accountId: compose.accountId }),
       });
       const data = await res.json();
       if (data.error) {
@@ -203,6 +220,8 @@ function InboxContent() {
           to: selectedMail.fromEmail || selectedMail.from,
           subject: selectedMail.subject.startsWith("Re:") ? selectedMail.subject : `Re: ${selectedMail.subject}`,
           text: replyText,
+          accountId: selectedMail.accountId,
+          provider: selectedMail.provider,
         }),
       });
       const data = await res.json();
@@ -281,7 +300,9 @@ function InboxContent() {
   const unreadCount = messages.filter(m => !m.isRead).length;
 
   const currentFolderTitle = folderParam === "sent" ? "Gönderilenler" : folderParam === "spam" ? "Spam / Çöp" : "Gelen Kutusu";
-  const currentAccountTitle = accountParam === "gmail" ? "Gmail" : accountParam === "hotmail" ? "Outlook" : "Tüm Postalar";
+  const currentAccountTitle = !accountParam || accountParam === "all"
+    ? "Tüm Postalar"
+    : connectedAccounts.find((a) => a.id === accountParam || a.provider === accountParam)?.label || "Posta";
 
   return (
     <div className="flex h-[calc(100vh-80px)] md:h-[calc(100vh-32px)] w-full bg-background text-on-surface overflow-hidden relative">
@@ -496,10 +517,12 @@ function InboxContent() {
                           className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
                             msg.provider === "gmail"
                               ? "bg-red-50 text-red-600 border border-red-100"
+                              : msg.provider === "imap"
+                              ? "bg-orange-50 text-orange-600 border border-orange-100"
                               : "bg-blue-50 text-blue-600 border border-blue-100"
                           }`}
                         >
-                          {msg.provider === "gmail" ? "GMAIL" : "OUTLOOK"}
+                          {msg.provider === "gmail" ? "GMAIL" : msg.provider === "imap" ? "WEBMAIL" : "OUTLOOK"}
                         </span>
                       </div>
                       
@@ -698,6 +721,32 @@ function InboxContent() {
                     </h1>
                   </div>
 
+                  {/* Attachments */}
+                  {selectedMail.attachments && selectedMail.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedMail.attachments.map((att, idx) => (
+                        <a
+                          key={idx}
+                          href={att.downloadUrl}
+                          download={att.filename}
+                          className="flex items-center space-x-2 px-3 py-2 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 rounded-xl text-xs font-medium text-on-surface transition-colors max-w-[220px]"
+                          title={att.filename}
+                        >
+                          <span className="material-symbols-outlined text-[18px] text-primary flex-shrink-0">
+                            {att.contentType?.startsWith("image/") ? "image" : "description"}
+                          </span>
+                          <span className="flex flex-col min-w-0">
+                            <span className="truncate">{att.filename}</span>
+                            {typeof att.size === "number" && att.size > 0 && (
+                              <span className="text-[10px] text-secondary">{formatFileSize(att.size)}</span>
+                            )}
+                          </span>
+                          <span className="material-symbols-outlined text-[16px] text-secondary flex-shrink-0">download</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Mail Body Frame */}
                   <div className="bg-white rounded-3xl p-5 border border-outline-variant/15 shadow-2xs leading-relaxed text-sm text-on-surface overflow-x-auto min-h-[300px]">
                     <div
@@ -793,19 +842,18 @@ function InboxContent() {
             </button>
 
             {connectedAccounts.map((acc) => {
-              const isGoogle = acc.provider === "gmail";
-              const accountLabel = isGoogle ? "Gmail" : "Outlook";
+              const iconColor = acc.provider === "gmail" ? "text-red-500" : acc.provider === "imap" ? "text-orange-500" : "text-blue-500";
               return (
                 <button
                   key={acc.id}
-                  onClick={() => updateParams({ account: acc.provider, folder: "inbox" })}
+                  onClick={() => updateParams({ account: acc.id, folder: "inbox" })}
                   className="w-full flex items-center justify-between px-4 py-3.5 text-sm text-left hover:bg-surface-container-low/40 active:bg-surface-container-low transition-colors"
                 >
                   <div className="flex items-center space-x-3 text-on-surface">
-                    <span className={`material-symbols-outlined text-[20px] font-bold ${isGoogle ? "text-red-500" : "text-blue-500"}`}>
+                    <span className={`material-symbols-outlined text-[20px] font-bold ${iconColor}`}>
                       move_to_inbox
                     </span>
-                    <span className="font-semibold">{accountLabel}</span>
+                    <span className="font-semibold">{acc.label}</span>
                   </div>
                   <span className="material-symbols-outlined text-[18px] text-outline/50">chevron_right</span>
                 </button>
@@ -816,39 +864,37 @@ function InboxContent() {
           {/* Account Subfolders tree */}
           <div className="space-y-4">
             {connectedAccounts.map((acc) => {
-              const isGoogle = acc.provider === "gmail";
-              const label = isGoogle ? "Gmail" : "Outlook";
               return (
                 <details key={acc.id} className="group space-y-1.5">
                   <summary className="px-2 flex items-center justify-between text-xs font-bold text-secondary uppercase tracking-wider font-label-caps opacity-80 cursor-pointer list-none select-none">
-                    <span>{label} ({acc.email.split("@")[0]})</span>
+                    <span>{acc.label} ({acc.email.split("@")[0]})</span>
                     <span className="material-symbols-outlined text-[16px] transition-transform group-open:rotate-180">expand_more</span>
                   </summary>
                   <div className="bg-white rounded-2xl border border-outline-variant/20 shadow-xs divide-y divide-outline-variant/15 overflow-hidden">
                     <button
-                      onClick={() => updateParams({ account: acc.provider, folder: "inbox" })}
+                      onClick={() => updateParams({ account: acc.id, folder: "inbox" })}
                       className="w-full flex items-center justify-between px-4 py-3 text-xs text-left hover:bg-surface-container-low/40 transition-colors"
                     >
                       <div className="flex items-center space-x-3">
                         <span className="material-symbols-outlined text-[18px] text-blue-500">inbox</span>
-                        <span className="font-medium text-on-surface">Eingang</span>
+                        <span className="font-medium text-on-surface">Gelen Kutusu</span>
                       </div>
                       <span className="material-symbols-outlined text-[16px] text-outline/50">chevron_right</span>
                     </button>
 
                     <button
-                      onClick={() => updateParams({ account: acc.provider, folder: "sent" })}
+                      onClick={() => updateParams({ account: acc.id, folder: "sent" })}
                       className="w-full flex items-center justify-between px-4 py-3 text-xs text-left hover:bg-surface-container-low/40 transition-colors"
                     >
                       <div className="flex items-center space-x-3">
                         <span className="material-symbols-outlined text-[18px] text-secondary">send</span>
-                        <span className="font-medium text-on-surface">Gesendet</span>
+                        <span className="font-medium text-on-surface">Gönderilenler</span>
                       </div>
                       <span className="material-symbols-outlined text-[16px] text-outline/50">chevron_right</span>
                     </button>
 
                     <button
-                      onClick={() => updateParams({ account: acc.provider, folder: "spam" })}
+                      onClick={() => updateParams({ account: acc.id, folder: "spam" })}
                       className="w-full flex items-center justify-between px-4 py-3 text-xs text-left hover:bg-surface-container-low/40 transition-colors"
                     >
                       <div className="flex items-center space-x-3">
@@ -894,13 +940,13 @@ function InboxContent() {
                   Gönderen Hesap:
                 </label>
                 <select
-                  value={compose.provider}
-                  onChange={(e) => setCompose({ ...compose, provider: e.target.value })}
+                  value={compose.accountId}
+                  onChange={(e) => setCompose({ ...compose, accountId: e.target.value })}
                   className="w-full px-3.5 py-2.5 text-xs bg-surface-container-low rounded-xl border border-outline-variant/30 focus:outline-none focus:border-primary text-on-surface font-semibold"
                 >
                   {connectedAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.provider}>
-                      {acc.provider === "gmail" ? "Google" : "Outlook"} — {acc.email}
+                    <option key={acc.id} value={acc.id}>
+                      {acc.label} — {acc.email}
                     </option>
                   ))}
                 </select>

@@ -122,6 +122,29 @@ function decodeBase64Url(base64UrlStr: string) {
   }
 }
 
+export interface GmailAttachmentInfo {
+  attachmentId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+}
+
+function collectGmailAttachments(payload: any, out: GmailAttachmentInfo[] = []): GmailAttachmentInfo[] {
+  if (!payload) return out;
+  if (payload.filename && payload.body?.attachmentId) {
+    out.push({
+      attachmentId: payload.body.attachmentId,
+      filename: payload.filename,
+      contentType: payload.mimeType || "application/octet-stream",
+      size: payload.body.size || 0,
+    });
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) collectGmailAttachments(part, out);
+  }
+  return out;
+}
+
 function parseGmailBody(payload: any): string {
   if (!payload) return "";
   if (payload.body && payload.body.data) {
@@ -191,9 +214,25 @@ export async function fetchGmailMessages(accessToken: string, limit = 20, folder
       body,
       isRead: !msg.labelIds?.includes("UNREAD"),
       hasAttachments: Boolean(msg.payload?.parts?.some((p: any) => p.filename && p.filename.length > 0)),
+      attachments: collectGmailAttachments(msg.payload),
       provider: "gmail",
     };
   });
+}
+
+// 4b. Gmail API: Ek Dosyayı İndirme
+export async function downloadGmailAttachment(accessToken: string, messageId: string, attachmentId: string): Promise<Buffer> {
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    throw new Error("Gmail eki indirilemedi.");
+  }
+
+  const data = await res.json();
+  const base64 = (data.data || "").replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(base64, "base64");
 }
 
 // 5. Gmail API: E-posta Gönderme

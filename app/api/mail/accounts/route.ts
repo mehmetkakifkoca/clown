@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { saveMailAccount, listMailAccounts, removeMailAccount, toggleMailAccountVisibility, updateMailAccountCapabilities } from "@/lib/firestore/mailAccounts";
+import { saveMailAccount, listMailAccounts, removeMailAccount, toggleMailAccountVisibility, updateMailAccountCapabilities, renameMailAccount } from "@/lib/firestore/mailAccounts";
 
 // GET /api/mail/accounts → bağlı hesapları listele
 export async function GET() {
@@ -51,16 +51,24 @@ export async function POST(request: Request) {
 // PATCH /api/mail/accounts → görünürlüğü veya özellikleri değiştir
 export async function PATCH(request: Request) {
   try {
-    const { id, isHidden, useForMail, useForCalendar } = await request.json();
+    const { id, isHidden, useForMail, useForCalendar, label } = await request.json();
     if (!id) return NextResponse.json({ error: "ID gerekli" }, { status: 400 });
-    
+
     if (typeof isHidden !== "undefined") {
       await toggleMailAccountVisibility(id, Boolean(isHidden));
     }
     if (typeof useForMail !== "undefined" || typeof useForCalendar !== "undefined") {
-      await updateMailAccountCapabilities(id, Boolean(useForMail), Boolean(useForCalendar));
+      await updateMailAccountCapabilities(id, {
+        ...(typeof useForMail !== "undefined" && { useForMail: Boolean(useForMail) }),
+        ...(typeof useForCalendar !== "undefined" && { useForCalendar: Boolean(useForCalendar) }),
+      });
     }
-    
+    if (typeof label === "string") {
+      const trimmed = label.trim();
+      if (!trimmed) return NextResponse.json({ error: "İsim boş olamaz" }, { status: 400 });
+      await renameMailAccount(id, trimmed);
+    }
+
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Hata";

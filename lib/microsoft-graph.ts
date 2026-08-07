@@ -82,6 +82,52 @@ export async function fetchGraphMessages(accessToken: string, limit = 20, folder
   return data.value || [];
 }
 
+// 4b. Microsoft Graph API: Mesajın Eklerini Listeleme
+export interface GraphAttachmentInfo {
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+}
+
+export async function fetchGraphAttachments(accessToken: string, messageId: string): Promise<GraphAttachmentInfo[]> {
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${messageId}/attachments`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    console.error("Outlook ekleri listelenemedi:", res.status, await res.text());
+    return [];
+  }
+
+  const data = await res.json();
+  return (data.value || [])
+    .filter((a: any) => a["@odata.type"] === "#microsoft.graph.fileAttachment")
+    .map((a: any) => ({ id: a.id, name: a.name, contentType: a.contentType, size: a.size }));
+}
+
+// 4c. Microsoft Graph API: Ek Dosyayı İndirme
+export async function downloadGraphAttachment(
+  accessToken: string,
+  messageId: string,
+  attachmentId: string
+): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${messageId}/attachments/${attachmentId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    throw new Error("Outlook eki indirilemedi.");
+  }
+
+  const data = await res.json();
+  return {
+    buffer: Buffer.from(data.contentBytes || "", "base64"),
+    contentType: data.contentType || "application/octet-stream",
+    filename: data.name || "dosya",
+  };
+}
+
 // 5. Microsoft Graph API: E-posta Gönderme
 export async function sendGraphMail(accessToken: string, toEmail: string, subject: string, content: string) {
   const message = {
