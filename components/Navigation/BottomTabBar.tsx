@@ -63,11 +63,11 @@ export function BottomTabBar() {
             className={`absolute inset-0 rounded-full bg-primary/40 ${isFeaturedActive ? "animate-ping" : ""}`}
           />
           <span
-            className={`relative w-14 h-14 flex items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30 ring-4 ring-surface-container-lowest transition-all duration-200 active:scale-95 ${
+            className={`relative w-14 h-14 rounded-full overflow-hidden shadow-lg shadow-primary/30 ring-4 ring-surface-container-lowest transition-all duration-200 active:scale-95 ${
               isFeaturedActive ? "scale-105" : "hover:scale-105"
             }`}
           >
-            <span className="material-symbols-outlined text-[28px] text-on-primary">{featuredTab.icon}</span>
+            <img src="/logo-icon.png" alt="Asistan" className="w-full h-full object-cover" />
           </span>
         </span>
         <span

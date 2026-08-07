@@ -183,7 +183,7 @@ export default function AssistantPage() {
           }}
           rows={1}
           placeholder="Bir şey sorun (örn. bugün ne toplantım var?)..."
-          className="flex-1 resize-none bg-transparent text-sm text-on-surface focus:outline-none py-2 px-1 max-h-32"
+          className="flex-1 resize-none bg-transparent text-[16px] md:text-sm text-on-surface focus:outline-none py-2 px-1 max-h-32"
         />
         <button
           type="submit"
