@@ -135,9 +135,10 @@ function InboxContent() {
       const res = await fetch("/api/mail/accounts");
       const accounts = await res.json();
       if (Array.isArray(accounts)) {
-        setConnectedAccounts(accounts);
-        if (accounts.length > 0 && !compose.provider) {
-          setCompose(prev => ({ ...prev, provider: accounts[0].provider }));
+        const visibleAccounts = accounts.filter(acc => !acc.isHidden && acc.useForMail !== false);
+        setConnectedAccounts(visibleAccounts);
+        if (visibleAccounts.length > 0 && !compose.provider) {
+          setCompose(prev => ({ ...prev, provider: visibleAccounts[0].provider }));
         }
       }
     } catch {
