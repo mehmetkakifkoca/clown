@@ -88,10 +88,7 @@ export async function renameMailAccount(id: string, label: string): Promise<void
   await setDoc(doc(db, "mailAccounts", id), { label }, { merge: true });
 }
 
-export async function updateMailAccountCapabilities(
-  id: string,
-  updates: { useForMail?: boolean; useForCalendar?: boolean }
-): Promise<void> {
+export async function updateMailAccountCapabilities(id: string, updates: Partial<{ useForMail: boolean; useForCalendar: boolean }>): Promise<void> {
   await setDoc(doc(db, "mailAccounts", id), updates, { merge: true });
 }
 

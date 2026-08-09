@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { fetchGraphMessages, refreshAccessToken } from "@/lib/microsoft-graph";
 import { fetchGmailMessages, getValidGoogleAccessToken } from "@/lib/google";

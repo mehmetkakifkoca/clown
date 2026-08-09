@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { saveMailAccount, listMailAccounts, removeMailAccount, toggleMailAccountVisibility, updateMailAccountCapabilities, renameMailAccount } from "@/lib/firestore/mailAccounts";
 
@@ -57,16 +59,16 @@ export async function PATCH(request: Request) {
     if (typeof isHidden !== "undefined") {
       await toggleMailAccountVisibility(id, Boolean(isHidden));
     }
-    if (typeof useForMail !== "undefined" || typeof useForCalendar !== "undefined") {
-      await updateMailAccountCapabilities(id, {
-        ...(typeof useForMail !== "undefined" && { useForMail: Boolean(useForMail) }),
-        ...(typeof useForCalendar !== "undefined" && { useForCalendar: Boolean(useForCalendar) }),
-      });
-    }
     if (typeof label === "string") {
-      const trimmed = label.trim();
-      if (!trimmed) return NextResponse.json({ error: "İsim boş olamaz" }, { status: 400 });
-      await renameMailAccount(id, trimmed);
+      await renameMailAccount(id, label);
+    }
+    
+    const updates: Partial<{ useForMail: boolean; useForCalendar: boolean }> = {};
+    if (typeof useForMail !== "undefined") updates.useForMail = Boolean(useForMail);
+    if (typeof useForCalendar !== "undefined") updates.useForCalendar = Boolean(useForCalendar);
+    
+    if (Object.keys(updates).length > 0) {
+      await updateMailAccountCapabilities(id, updates);
     }
 
     return NextResponse.json({ success: true });
