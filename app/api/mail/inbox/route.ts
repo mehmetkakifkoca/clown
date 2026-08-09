@@ -49,6 +49,7 @@ export async function GET(request: Request) {
       if (acc.provider === "hotmail") {
         try {
           const folderPath = folderFilter === "sent" ? "sentitems" : folderFilter === "spam" ? "junkemail" : "inbox";
+          if (!accessToken) continue;
           const msgs = await fetchGraphMessages(accessToken, limit, folderPath);
           const formatted = msgs.map((msg: any) => ({
             id: msg.id,
