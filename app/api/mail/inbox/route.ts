@@ -73,6 +73,7 @@ export async function GET(request: Request) {
       if (acc.provider === "gmail") {
         try {
           const gmailFolder = folderFilter === "sent" ? "SENT" : folderFilter === "spam" ? "SPAM" : "INBOX";
+          if (!accessToken) continue;
           const msgs = await fetchGmailMessages(accessToken, limit, gmailFolder);
           const formatted = msgs.map((msg: any) => ({
             ...msg,
